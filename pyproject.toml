@@ -1,0 +1,27 @@
+[project]
+name = "guardrails"
+version = "0.1.0"
+description = "Medical Chat Sanitizer - Security layer for anonymizing patient data according to GDPR and HIPAA regulations"
+readme = "README.md"
+requires-python = ">=3.13"
+authors = [
+    { name = "Christopher Abanilla" }
+]
+dependencies = [
+    "fastapi>=0.135.1",
+    "presidio>=2.2.361",
+    "python-dotenv>=1.2.2",
+    "uvicorn>=0.41.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "httpx>=0.27.0",
+]
+
+[tool.uv]
+dev-dependencies = [
+    "pytest>=8.0.0",
+    "httpx>=0.27.0",
+]
