@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Admin{% endblock %} - Medisan</title>
+    <link rel="stylesheet" href="/static/css/admin.css">
+</head>
+<body>
+    <div class="container">
+        {% if user %}
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <h2>Medisan</h2>
+            </div>
+            <nav class="sidebar-nav">
+                <a href="/admin/dashboard" class="nav-item {% if request.url.path == '/admin/dashboard' %}active{% endif %}">
+                    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="3" y="3" width="7" height="7" rx="1"/>
+                        <rect x="14" y="3" width="7" height="7" rx="1"/>
+                        <rect x="3" y="14" width="7" height="7" rx="1"/>
+                        <rect x="14" y="14" width="7" height="7" rx="1"/>
+                    </svg>
+                    Dashboard
+                </a>
+                <a href="/admin/entities" class="nav-item {% if '/admin/entities' in request.url.path %}active{% endif %}">
+                    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M7 7h.01M7 3h5c1.133 0 2.2.534 2.868 1.434l4 6c1.072 1.607.844 3.73-.548 5.123l-2.863 2.863c-1.393 1.392-3.516 1.62-5.123.548l-6-4C3.534 14.2 3 13.133 3 12V7a4 4 0 0 1 4-4z"/>
+                    </svg>
+                    Entities
+                </a>
+                <a href="/admin/recognizers" class="nav-item {% if '/admin/recognizers' in request.url.path and request.url.path != '/admin/recognizers/create' %}active{% endif %}">
+                    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="11" cy="11" r="8"/>
+                        <path d="M21 21l-4.35-4.35"/>
+                    </svg>
+                    Recognizers
+                </a>
+            </nav>
+            <div class="sidebar-footer">
+                <div class="user-menu">
+                    <span class="username">{{ user.username }}</span>
+                    <div class="user-menu-links">
+                        <a href="/admin/profile/password">Change Password</a>
+                        <a href="/admin/logout">Logout</a>
+                    </div>
+                </div>
+            </div>
+        </aside>
+        {% endif %}
+        <main class="content {% if not user %}no-sidebar{% endif %}">
+            {% if error %}
+            <div class="alert alert-error">{{ error }}</div>
+            {% endif %}
+            {% if success %}
+            <div class="alert alert-success">{{ success }}</div>
+            {% endif %}
+            {% block content %}{% endblock %}
+        </main>
+    </div>
+    <script src="/static/js/admin.js"></script>
+</body>
+</html>

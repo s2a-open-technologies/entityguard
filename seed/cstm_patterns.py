@@ -54,7 +54,7 @@ class MedicalPatternProvider:
         phone_patterns = [
             Pattern(
                 name="telefonnummern_deutschland",
-                regex=r"(?:\+49|0)(?:\s*\d{2,5}\s*)(?:[/-]?\s*\d{3,9})",
+                regex=r"(?:\+49|0|[Oo])(?:\s*\d{2,5}\s*)(?:[/-]?\s*\d{3,9})",
                 score=0.85)
         ]
         phone_recognizer = PatternRecognizer(supported_entity="PHONE_NUMBER", patterns=phone_patterns, supported_language="de")

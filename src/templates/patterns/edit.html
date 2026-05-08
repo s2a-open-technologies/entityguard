@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+
+{% block title %}Edit Pattern{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Edit Pattern: {{ pattern.name }}</h1>
+    <a href="/admin/recognizers/{{ pattern.recognizer_id }}" class="btn btn-secondary">Back to Recognizer</a>
+</div>
+
+<form method="POST" action="/admin/patterns/{{ pattern.id }}/edit" class="form">
+    <div class="form-group">
+        <label for="name">Name</label>
+        <input type="text" id="name" name="name" value="{{ pattern.name }}" required>
+    </div>
+
+    <div class="form-group">
+        <label for="regex">Regular Expression</label>
+        <textarea id="regex" name="regex" rows="3" required>{{ pattern.regex }}</textarea>
+        <small>Enter a valid Python regular expression pattern.</small>
+    </div>
+
+    <div class="form-group">
+        <label for="score">Score (0.0 - 1.0)</label>
+        <input type="number" id="score" name="score" step="0.01" min="0" max="1" value="{{ pattern.score }}" required>
+        <small>Higher scores indicate higher confidence in the match.</small>
+    </div>
+
+    <div class="form-actions">
+        <button type="submit" class="btn btn-primary">Save Changes</button>
+        <a href="/admin/recognizers/{{ pattern.recognizer_id }}" class="btn btn-secondary">Cancel</a>
+    </div>
+</form>
+{% endblock %}

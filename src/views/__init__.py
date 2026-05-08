@@ -1,1 +1,1 @@
-from .anonymizer_view import guardrails_router
+from .anonymizer import entityguard_router

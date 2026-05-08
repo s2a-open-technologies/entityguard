@@ -1,7 +1,7 @@
 version: '3.8'
 
 services:
-  guardrails:
+  medisan:
     build: .
     container_name: medical-chat-sanitizer
     ports:
@@ -16,8 +16,8 @@ services:
       start_period: 10s
     restart: unless-stopped
     networks:
-      - guardrails-network
+      - medisan-network
 
 networks:
-  guardrails-network:
+  medisan-network:
     driver: bridge

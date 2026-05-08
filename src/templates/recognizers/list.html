@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+
+{% block title %}Recognizers{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Recognizers</h1>
+    <a href="/admin/recognizers/create" class="btn btn-primary">Create Recognizer</a>
+</div>
+
+{% if recognizers %}
+<table class="data-table">
+    <thead>
+        <tr>
+            <th>Name</th>
+            <th>Entity</th>
+            <th>Language</th>
+            <th>Status</th>
+            <th>Patterns</th>
+            <th>Context Words</th>
+            <th>Actions</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for recognizer in recognizers %}
+        <tr>
+            <td>
+                <a href="/admin/recognizers/{{ recognizer.id }}"><strong>{{ recognizer.name }}</strong></a>
+            </td>
+            <td><code>{{ recognizer.supported_entity }}</code></td>
+            <td>{{ recognizer.supported_language }}</td>
+            <td>
+                <span class="badge {% if recognizer.is_active %}badge-success{% else %}badge-secondary{% endif %}">
+                    {% if recognizer.is_active %}Active{% else %}Inactive{% endif %}
+                </span>
+            </td>
+            <td>{{ recognizer.patterns|length }}</td>
+            <td>{{ recognizer.context_words|length }}</td>
+            <td class="actions">
+                <a href="/admin/recognizers/{{ recognizer.id }}" class="btn btn-sm btn-secondary">View</a>
+                <a href="/admin/recognizers/{{ recognizer.id }}/edit" class="btn btn-sm btn-secondary">Edit</a>
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<div class="empty-state">
+    <p>No recognizers configured yet.</p>
+    <a href="/admin/recognizers/create" class="btn btn-primary">Create your first recognizer</a>
+</div>
+{% endif %}
+{% endblock %}

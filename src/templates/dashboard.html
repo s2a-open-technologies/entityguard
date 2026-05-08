@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Dashboard</h1>
+</div>
+
+<div class="stats-grid">
+    <div class="stat-card">
+        <div class="stat-value">{{ recognizers|length }}</div>
+        <div class="stat-label">Total Recognizers</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value">{{ active_count }}</div>
+        <div class="stat-label">Active Recognizers</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value">{{ total_patterns }}</div>
+        <div class="stat-label">Total Patterns</div>
+    </div>
+</div>
+
+<div class="section">
+    <div class="section-header">
+        <h2>Recent Recognizers</h2>
+        <a href="/admin/recognizers" class="btn btn-secondary">View All</a>
+    </div>
+
+    {% if recognizers %}
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Name</th>
+                <th>Entity</th>
+                <th>Language</th>
+                <th>Status</th>
+                <th>Patterns</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for recognizer in recognizers[:5] %}
+            <tr>
+                <td>
+                    <a href="/admin/recognizers/{{ recognizer.id }}">{{ recognizer.name }}</a>
+                </td>
+                <td>{{ recognizer.supported_entity }}</td>
+                <td>{{ recognizer.supported_language }}</td>
+                <td>
+                    <span class="badge {% if recognizer.is_active %}badge-success{% else %}badge-secondary{% endif %}">
+                        {% if recognizer.is_active %}Active{% else %}Inactive{% endif %}
+                    </span>
+                </td>
+                <td>{{ recognizer.patterns|length }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p class="empty-state">No recognizers configured. <a href="/admin/recognizers/create">Create your first recognizer</a>.</p>
+    {% endif %}
+</div>
+
+<div class="section">
+    <h2>Quick Actions</h2>
+    <div class="actions-grid">
+        <a href="/admin/recognizers/create" class="action-card">
+            <svg class="action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="12" y1="5" x2="12" y2="19"/>
+                <line x1="5" y1="12" x2="19" y2="12"/>
+            </svg>
+            <span class="action-label">New Recognizer</span>
+        </a>
+        <a href="/admin/recognizers" class="action-card">
+            <svg class="action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="11" cy="11" r="8"/>
+                <path d="M21 21l-4.35-4.35"/>
+            </svg>
+            <span class="action-label">Manage Patterns</span>
+        </a>
+    </div>
+</div>
+{% endblock %}

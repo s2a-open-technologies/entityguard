@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+
+{% block title %}Edit {{ entity.name }}{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Edit Entity: {{ entity.name }}</h1>
+    <a href="/admin/entities" class="btn btn-secondary">Back to List</a>
+</div>
+
+<form method="POST" action="/admin/entities/{{ entity.id }}/edit" class="form">
+    <div class="form-group">
+        <label for="name">Entity Name</label>
+        <input type="text" id="name" name="name" value="{{ entity.name }}" required>
+    </div>
+
+    <div class="form-group">
+        <label for="placeholder">Placeholder</label>
+        <input type="text" id="placeholder" name="placeholder" value="{{ entity.placeholder }}" required>
+        <small>Text that replaces detected entities in output</small>
+    </div>
+
+    <div class="form-group">
+        <label for="description">Description</label>
+        <textarea id="description" name="description" rows="3">{{ entity.description or '' }}</textarea>
+    </div>
+
+    <div class="form-group">
+        <label class="checkbox-label">
+            <input type="checkbox" name="is_active" value="true" {% if entity.is_active %}checked{% endif %}>
+            Active
+        </label>
+        <small>Only active entities are available for new recognizers</small>
+    </div>
+
+    <div class="form-actions">
+        <button type="submit" class="btn btn-primary">Save Changes</button>
+        <a href="/admin/entities" class="btn btn-secondary">Cancel</a>
+    </div>
+</form>
+{% endblock %}

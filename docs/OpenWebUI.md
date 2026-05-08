@@ -24,7 +24,7 @@ class Filter:
     """
     OpenWebUI filter that sanitizes user input before LLM processing.
 
-    This filter intercepts user messages, sends them to the Guardrails API
+    This filter intercepts user messages, sends them to the Medisan API
     for anonymization, and replaces the original text with the sanitized version.
     If the sanitization fails, the request is blocked (fail-closed principle).
 
@@ -40,14 +40,14 @@ class Filter:
         These settings can be configured via the OpenWebUI UI.
 
         Attributes:
-            api_url (str): URL of the Guardrails sanitization endpoint.
+            api_url (str): URL of the Medisan sanitization endpoint.
             department_id (str): Department-specific rule set to apply
                 (e.g., "standard", "psychiatrie", "cardio").
             timeout (int): Timeout in seconds for the API request.
         """
         api_url: str = Field(
-            default="http://localhost:6000/api/v1/guardrails/sanitize",
-            description="Guardrails API URL"
+            default="http://localhost:6000/api/v1/medisan/sanitize",
+            description="Medisan API URL"
         )
         department_id: str = Field(
             default="standard",
@@ -67,7 +67,7 @@ class Filter:
         Process the request body before sending to the LLM.
 
         This method is executed BEFORE the message is sent to the LLM.
-        It extracts the last user message, sends it to the Guardrails API
+        It extracts the last user message, sends it to the Medisan API
         for sanitization, and replaces the original text with the sanitized version.
 
         Args:
@@ -159,7 +159,7 @@ Der Filter wird auf **alle Chat-Anfragen** angewendet, unabhängig vom verwendet
 
    | Einstellung | Beschreibung | Empfohlener Wert (Docker) |
    |-------------|--------------|---------------------------|
-   | `api_url` | URL des Guardrails-Dienstes | `http://host.docker.internal:6000/api/v1/guardrails/sanitize` |
+   | `api_url` | URL des Medisan-Dienstes | `http://host.docker.internal:6000/api/v1/medisan/sanitize` |
    | `department_id` | Regelwerk | `standard` |
    | `timeout` | Timeout in Sekunden | `5` |
 
@@ -169,9 +169,9 @@ Der Filter wird auf **alle Chat-Anfragen** angewendet, unabhängig vom verwendet
 
 | Szenario | `api_url` |
 |----------|-----------|
-| OpenWebUI läuft **lokal** (nicht in Docker) | `http://localhost:6000/api/v1/guardrails/sanitize` |
-| OpenWebUI läuft **in Docker** (gleiches Netzwerk) | `http://guardrails:6000/api/v1/guardrails/sanitize` |
-| OpenWebUI läuft **in Docker** (anderes Netzwerk) | `http://host.docker.internal:6000/api/v1/guardrails/sanitize` |
+| OpenWebUI läuft **lokal** (nicht in Docker) | `http://localhost:6000/api/v1/medisan/sanitize` |
+| OpenWebUI läuft **in Docker** (gleiches Netzwerk) | `http://medisan:6000/api/v1/medisan/sanitize` |
+| OpenWebUI läuft **in Docker** (anderes Netzwerk) | `http://host.docker.internal:6000/api/v1/medisan/sanitize` |
 
 ---
 
@@ -189,7 +189,7 @@ Der Filter wird **nur für bestimmte Modelle** angewendet. Dies ist nützlich, w
 6. Konfiguriere die **Valves** für dieses Modell:
 
    ```
-   api_url: http://host.docker.internal:6000/api/v1/guardrails/sanitize
+   api_url: http://host.docker.internal:6000/api/v1/medisan/sanitize
    department_id: standard
    timeout: 5
    ```
@@ -202,7 +202,7 @@ Der Filter wird **nur für bestimmte Modelle** angewendet. Dies ist nützlich, w
 
 ## Empfohlene Konfiguration für Docker-Umgebungen
 
-Wenn sowohl OpenWebUI als auch der Guardrails-Dienst in Docker laufen:
+Wenn sowohl OpenWebUI als auch der Medisan-Dienst in Docker laufen:
 
 ### docker-compose.yml (erweitert)
 
@@ -210,7 +210,7 @@ Wenn sowohl OpenWebUI als auch der Guardrails-Dienst in Docker laufen:
 version: '3.8'
 
 services:
-  guardrails:
+  medisan:
     build: .
     container_name: medical-chat-sanitizer
     ports:
@@ -235,7 +235,7 @@ services:
     environment:
       - OPENWEBUI_URL=http://localhost:3000
     depends_on:
-      - guardrails
+      - medisan
     networks:
       - openwebui-network
     restart: unless-stopped
@@ -247,7 +247,7 @@ networks:
 
 **Filter-Konfiguration in OpenWebUI:**
 
-- `api_url`: `http://guardrails:6000/api/v1/guardrails/sanitize`
+- `api_url`: `http://medisan:6000/api/v1/medisan/sanitize`
 - `department_id`: `standard`
 - `timeout`: `5`
 
@@ -262,16 +262,16 @@ networks:
 
 ### "Connection refused" oder Timeout
 
-- Überprüfe, ob der Guardrails-Dienst läuft: `docker ps` oder `http://localhost:6000/health`
+- Überprüfe, ob der Medisan-Dienst läuft: `docker ps` oder `http://localhost:6000/health`
 - Korrigiere die `api_url` entsprechend deiner Umgebung (siehe Tabelle oben)
 
 ### Filter blockiert alle Anfragen
 
-- Überprüfe die **Logs** des Guardrails-Dienstes: `docker logs medical-chat-sanitizer`
+- Überprüfe die **Logs** des Medisan-Dienstes: `docker logs medical-chat-sanitizer`
 - Erhöhe ggf. das `timeout` auf `10` Sekunden
 - Teste den Endpoint manuell:
   ```bash
-  curl -X POST http://localhost:6000/api/v1/guardrails/sanitize \
+  curl -X POST http://localhost:6000/api/v1/medisan/sanitize \
     -H "Content-Type: application/json" \
     -d '{"text": "Test", "department": "standard"}'
   ```

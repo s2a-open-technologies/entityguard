@@ -1,7 +1,7 @@
 [project]
-name = "guardrails"
-version = "0.1.0"
-description = "Medical Chat Sanitizer - Security layer for anonymizing patient data according to GDPR and HIPAA regulations"
+name = "medisan"
+version = "1.0.0"
+description = "Medisan - Medical Chat Sanitizer - Security layer for anonymizing patient data according to GDPR and HIPAA regulations"
 readme = "README.md"
 requires-python = ">=3.13"
 authors = [
@@ -12,6 +12,11 @@ dependencies = [
     "presidio>=2.2.361",
     "python-dotenv>=1.2.2",
     "uvicorn>=0.41.0",
+    "sqlalchemy>=2.0.0",
+    "alembic>=1.13.0",
+    "jinja2>=3.1.0",
+    "passlib[bcrypt]>=1.7.4",
+    "python-multipart>=0.0.6",
 ]
 
 [project.optional-dependencies]
