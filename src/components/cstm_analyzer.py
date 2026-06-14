@@ -1,22 +1,32 @@
 """
-Custom Analyzer module for text anonymization.
+.
+Copyright (C) 2026  Christopher Abanilla
 
-This module provides the CustomAnalyzer class that wraps Microsoft Presidio's
-AnalyzerEngine and AnonymizerEngine to detect and mask sensitive entities
-in medical text data. Supports both static patterns and database-loaded patterns.
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as
+published by the Free Software Foundation, either version 3 of the
+License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 
 import logging
 from typing import List, Optional
 
 from presidio_analyzer import AnalyzerEngine, Pattern, PatternRecognizer
+from presidio_analyzer.nlp_engine import NlpEngineProvider
 from presidio_anonymizer import AnonymizerEngine
 from presidio_anonymizer.entities import OperatorConfig
-from presidio_analyzer.nlp_engine import NlpEngineProvider
 from sqlalchemy.orm import Session
 
-# Note: MedicalPatternProvider moved to seed/ for initial database seeding only
-# No static fallback - database is the single source of truth
+from src.database.crud import get_entities, get_recognizers
+from src.database.models import RecognizerModel
 
 # Logger
 logger = logging.getLogger("uvicorn.error")
@@ -51,9 +61,6 @@ class DatabasePatternProvider:
             List[PatternRecognizer]: List of PatternRecognizer instances
                 created from active database recognizers.
         """
-        from src.database.crud import get_recognizers
-        from src.database.models import RecognizerModel
-
         recognizers = []
         db_recognizers = get_recognizers(db, active_only=True)
 
@@ -100,8 +107,8 @@ class CustomAnalyzer:
     A custom analyzer that combines Presidio's analyzer and anonymizer
     with custom pattern recognizers for German medical text.
 
-    Supports both static patterns (from MedicalPatternProvider) and
-    dynamic patterns loaded from the database.
+    Patterns are loaded dynamically from the database; there is no static
+    fallback.
 
     Attributes:
         language (str): The language code for text analysis (default: "de").
@@ -116,7 +123,7 @@ class CustomAnalyzer:
         Args:
             language (str): Language code for text analysis. Defaults to "de".
             db (Optional[Session]): Database session for loading patterns.
-                If None, falls back to static patterns.
+                If None, no recognizers are loaded.
         """
         self.language = language
         self.anonymizer = AnonymizerEngine()
@@ -255,7 +262,6 @@ class CustomAnalyzer:
 
         if db_session:
             try:
-                from src.database.crud import get_entities
                 db_entities = get_entities(db_session, active_only=True)
                 for entity in db_entities:
                     entity_placeholders[entity.name] = entity.placeholder

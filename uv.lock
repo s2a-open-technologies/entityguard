@@ -589,7 +589,7 @@ wheels = [
 ]
 
 [[package]]
-name = "medisan"
+name = "entityguard"
 version = "1.0.0"
 source = { virtual = "." }
 dependencies = [

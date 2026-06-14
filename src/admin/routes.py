@@ -1,29 +1,39 @@
 """
-Admin interface routes.
+.
+Copyright (C) 2026  Christopher Abanilla
 
-This module provides all routes for the admin interface including
-authentication, dashboard, and CRUD operations for recognizers and patterns.
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as
+published by the Free Software Foundation, either version 3 of the
+License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 
 import re
+from pathlib import Path
 from typing import Annotated
-from fastapi import APIRouter, Request, Depends, Form, HTTPException
+
+from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
-from pathlib import Path
 
 from src.database import SessionLocal
 from src.database.crud import (
-    get_recognizer, get_recognizers, create_recognizer, update_recognizer, delete_recognizer,
-    get_pattern, get_patterns_by_recognizer, create_pattern, update_pattern, delete_pattern,
-    get_context_words_by_recognizer, create_context_word, delete_context_word,
-    get_admin_user, update_admin_password,
-    get_entities, get_entity, get_entity_by_name, create_entity, update_entity, delete_entity
+    create_context_word, create_entity, create_pattern, create_recognizer, delete_context_word,
+    delete_entity, delete_pattern, delete_recognizer, get_admin_user, get_entities, get_entity,
+    get_entity_by_name, get_pattern, get_pattern_by_name, get_recognizer, get_recognizer_by_name,
+    get_recognizers, get_context_word, get_context_words_by_recognizer, get_patterns_by_recognizer,
+    update_admin_password, update_entity, update_pattern, update_recognizer, verify_password,
 )
-from .auth import (
-    create_session, delete_session, require_auth, SESSION_COOKIE_NAME,
-    authenticate_user
-)
+
+from .auth import authenticate_user, create_session, delete_session, require_auth, SESSION_COOKIE_NAME
 from .dependencies import get_template_context
 
 # Router
@@ -143,7 +153,7 @@ async def create_recognizer_submit(
     db = SessionLocal()
     try:
         # Check if name already exists
-        existing = get_recognizer_by_name_internal(db, name)
+        existing = get_recognizer_by_name(db, name)
         if existing:
             entities = get_entities(db, active_only=True)
             context = get_template_context(
@@ -233,7 +243,7 @@ async def edit_recognizer_submit(
             raise HTTPException(status_code=404, detail="Recognizer not found")
 
         # Check if name already exists (for another recognizer)
-        existing = get_recognizer_by_name_internal(db, name)
+        existing = get_recognizer_by_name(db, name)
         if existing and existing.id != recognizer_id:
             entities = get_entities(db, active_only=True)
             context = get_template_context(
@@ -308,7 +318,7 @@ async def create_pattern_submit(
             return templates.TemplateResponse("recognizers/view.html", context, status_code=400)
 
         # Check if name already exists
-        existing = get_pattern_by_name_internal(db, name)
+        existing = get_pattern_by_name(db, name)
         if existing:
             recognizer = get_recognizer(db, recognizer_id)
             patterns = get_patterns_by_recognizer(db, recognizer_id)
@@ -429,7 +439,7 @@ async def delete_context_word_submit(
     """Delete a context word."""
     db = SessionLocal()
     try:
-        context_word = get_context_word_internal(db, context_word_id)
+        context_word = get_context_word(db, context_word_id)
         if not context_word:
             raise HTTPException(status_code=404, detail="Context word not found")
 
@@ -469,7 +479,6 @@ async def change_password_submit(
         if not db_user:
             raise HTTPException(status_code=404, detail="User not found")
 
-        from src.database.crud import verify_password
         if not verify_password(current_password, db_user.password_hash):
             context = get_template_context(request, error="Current password is incorrect")
             return templates.TemplateResponse("profile/password.html", context, status_code=400)
@@ -522,22 +531,7 @@ async def preview_pattern(
 # Helper functions
 # ============================================================================
 
-def get_recognizer_by_name_internal(db, name: str):
-    """Internal helper to get recognizer by name."""
-    from src.database.crud import get_recognizer_by_name
-    return get_recognizer_by_name(db, name)
 
-
-def get_pattern_by_name_internal(db, name: str):
-    """Internal helper to get pattern by name."""
-    from src.database.crud import get_pattern_by_name
-    return get_pattern_by_name(db, name)
-
-
-def get_context_word_internal(db, context_word_id: int):
-    """Internal helper to get context word."""
-    from src.database.crud import get_context_word
-    return get_context_word(db, context_word_id)
 
 
 # ============================================================================

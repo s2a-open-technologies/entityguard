@@ -1,19 +1,31 @@
 """
-Authentication module for the admin interface.
+.
+Copyright (C) 2026  Christopher Abanilla
 
-This module provides session-based authentication for the single admin user
-using HTTP-only cookies with in-memory session storage.
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as
+published by the Free Software Foundation, either version 3 of the
+License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 
 import secrets
 import time
 from datetime import datetime, timedelta
 from typing import Optional
-from fastapi import Request, HTTPException, status, Depends
+
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.responses import RedirectResponse
 
 from src.database import SessionLocal
-from src.database.crud import get_admin_user, authenticate_admin_user
+from src.database.crud import authenticate_admin_user, get_admin_user
 
 
 # In-memory session store (sufficient for single user)

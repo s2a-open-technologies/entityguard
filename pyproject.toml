@@ -1,7 +1,7 @@
 [project]
-name = "medisan"
+name = "entityguard"
 version = "1.0.0"
-description = "Medisan - Medical Chat Sanitizer - Security layer for anonymizing patient data according to GDPR and HIPAA regulations"
+description = "EntityGuard - Security layer for anonymizing patient data according to GDPR and HIPAA regulations"
 readme = "README.md"
 requires-python = ">=3.13"
 authors = [

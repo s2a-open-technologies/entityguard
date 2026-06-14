@@ -1,4 +1,4 @@
-# Medical Chat Sanitizer - Docker Image
+# EntityGuard - Docker Image
 FROM python:3.13-slim
 
 # Arbeitsverzeichnis
@@ -29,11 +29,11 @@ COPY src/ ./src/
 COPY main.py ./
 
 # Port exponieren
-EXPOSE 6000
+EXPOSE 9500
 
 # Healthcheck
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:6000/health || exit 1
+    CMD curl -f http://localhost:9500/health || exit 1
 
 # Anwendung starten
 CMD ["python", "main.py"]

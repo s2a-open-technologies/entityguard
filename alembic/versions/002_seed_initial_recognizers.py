@@ -1,9 +1,21 @@
-"""Seed initial recognizers from cstm_patterns
-
-Revision ID: 002
-Revises: 001
-Create Date: 2026-03-13
 """
+Seed initial recognizers and entities.
+Copyright (C) 2026  Christopher Abanilla
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as
+published by the Free Software Foundation, either version 3 of the
+License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program.  If not, see <https://www.gnu.org/licenses/>.
+"""
+
 from alembic import op
 import sqlalchemy as sa
 
@@ -15,7 +27,7 @@ depends_on = None
 
 
 def upgrade():
-    """Seed initial recognizers and entities from cstm_patterns."""
+    """Seed initial recognizers and entities."""
 
     # Insert entities with their placeholders
     entities = [

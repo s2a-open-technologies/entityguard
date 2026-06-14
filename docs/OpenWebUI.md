@@ -4,12 +4,12 @@
 
 ```python
 """
-title: Health Guardrail Filter
+title: EntityGuard Filter
 author: Christopher Abanilla
 version: 0.1
 
 A filter for OpenWebUI that sanitizes user messages before sending them to the LLM.
-It uses the Medical Chat Sanitizer API to detect and mask sensitive entities
+It uses the EntityGuard API to detect and mask sensitive entities
 according to GDPR and HIPAA regulations.
 """
 import requests
@@ -24,7 +24,7 @@ class Filter:
     """
     OpenWebUI filter that sanitizes user input before LLM processing.
 
-    This filter intercepts user messages, sends them to the Medisan API
+    This filter intercepts user messages, sends them to the EntityGuard API
     for anonymization, and replaces the original text with the sanitized version.
     If the sanitization fails, the request is blocked (fail-closed principle).
 
@@ -40,14 +40,14 @@ class Filter:
         These settings can be configured via the OpenWebUI UI.
 
         Attributes:
-            api_url (str): URL of the Medisan sanitization endpoint.
+            api_url (str): URL of the EntityGuard sanitization endpoint.
             department_id (str): Department-specific rule set to apply
                 (e.g., "standard", "psychiatrie", "cardio").
             timeout (int): Timeout in seconds for the API request.
         """
         api_url: str = Field(
-            default="http://localhost:6000/api/v1/medisan/sanitize",
-            description="Medisan API URL"
+            default="http://localhost:9500/api/v1/entityguard/sanitize",
+            description="EntityGuard API URL"
         )
         department_id: str = Field(
             default="standard",
@@ -67,7 +67,7 @@ class Filter:
         Process the request body before sending to the LLM.
 
         This method is executed BEFORE the message is sent to the LLM.
-        It extracts the last user message, sends it to the Medisan API
+        It extracts the last user message, sends it to the EntityGuard API
         for sanitization, and replaces the original text with the sanitized version.
 
         Args:
@@ -159,7 +159,7 @@ Der Filter wird auf **alle Chat-Anfragen** angewendet, unabhängig vom verwendet
 
    | Einstellung | Beschreibung | Empfohlener Wert (Docker) |
    |-------------|--------------|---------------------------|
-   | `api_url` | URL des Medisan-Dienstes | `http://host.docker.internal:6000/api/v1/medisan/sanitize` |
+   | `api_url` | URL des EntityGuard-Dienstes | `http://host.docker.internal:9500/api/v1/entityguard/sanitize` |
    | `department_id` | Regelwerk | `standard` |
    | `timeout` | Timeout in Sekunden | `5` |
 
@@ -169,9 +169,9 @@ Der Filter wird auf **alle Chat-Anfragen** angewendet, unabhängig vom verwendet
 
 | Szenario | `api_url` |
 |----------|-----------|
-| OpenWebUI läuft **lokal** (nicht in Docker) | `http://localhost:6000/api/v1/medisan/sanitize` |
-| OpenWebUI läuft **in Docker** (gleiches Netzwerk) | `http://medisan:6000/api/v1/medisan/sanitize` |
-| OpenWebUI läuft **in Docker** (anderes Netzwerk) | `http://host.docker.internal:6000/api/v1/medisan/sanitize` |
+| OpenWebUI läuft **lokal** (nicht in Docker) | `http://localhost:9500/api/v1/entityguard/sanitize` |
+| OpenWebUI läuft **in Docker** (gleiches Netzwerk) | `http://entityguard:9500/api/v1/entityguard/sanitize` |
+| OpenWebUI läuft **in Docker** (anderes Netzwerk) | `http://host.docker.internal:9500/api/v1/entityguard/sanitize` |
 
 ---
 
@@ -189,7 +189,7 @@ Der Filter wird **nur für bestimmte Modelle** angewendet. Dies ist nützlich, w
 6. Konfiguriere die **Valves** für dieses Modell:
 
    ```
-   api_url: http://host.docker.internal:6000/api/v1/medisan/sanitize
+    api_url: http://host.docker.internal:9500/api/v1/entityguard/sanitize
    department_id: standard
    timeout: 5
    ```
@@ -202,7 +202,7 @@ Der Filter wird **nur für bestimmte Modelle** angewendet. Dies ist nützlich, w
 
 ## Empfohlene Konfiguration für Docker-Umgebungen
 
-Wenn sowohl OpenWebUI als auch der Medisan-Dienst in Docker laufen:
+Wenn sowohl OpenWebUI als auch der EntityGuard-Dienst in Docker laufen:
 
 ### docker-compose.yml (erweitert)
 
@@ -210,15 +210,15 @@ Wenn sowohl OpenWebUI als auch der Medisan-Dienst in Docker laufen:
 version: '3.8'
 
 services:
-  medisan:
+  entityguard:
     build: .
-    container_name: medical-chat-sanitizer
+    container_name: entityguard
     ports:
-      - "6000:6000"
+      - "9500:9500"
     environment:
       - PYTHONUNBUFFERED=1
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:6000/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:9500/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -235,7 +235,7 @@ services:
     environment:
       - OPENWEBUI_URL=http://localhost:3000
     depends_on:
-      - medisan
+      - entityguard
     networks:
       - openwebui-network
     restart: unless-stopped
@@ -247,7 +247,7 @@ networks:
 
 **Filter-Konfiguration in OpenWebUI:**
 
-- `api_url`: `http://medisan:6000/api/v1/medisan/sanitize`
+- `api_url`: `http://entityguard:9500/api/v1/entityguard/sanitize`
 - `department_id`: `standard`
 - `timeout`: `5`
 
@@ -262,16 +262,16 @@ networks:
 
 ### "Connection refused" oder Timeout
 
-- Überprüfe, ob der Medisan-Dienst läuft: `docker ps` oder `http://localhost:6000/health`
+- Überprüfe, ob der EntityGuard-Dienst läuft: `docker ps` oder `http://localhost:9500/health`
 - Korrigiere die `api_url` entsprechend deiner Umgebung (siehe Tabelle oben)
 
 ### Filter blockiert alle Anfragen
 
-- Überprüfe die **Logs** des Medisan-Dienstes: `docker logs medical-chat-sanitizer`
+  - Überprüfe die **Logs** des EntityGuard-Dienstes: `docker logs entityguard`
 - Erhöhe ggf. das `timeout` auf `10` Sekunden
 - Teste den Endpoint manuell:
   ```bash
-  curl -X POST http://localhost:6000/api/v1/medisan/sanitize \
+  curl -X POST http://localhost:9500/api/v1/entityguard/sanitize \
     -H "Content-Type: application/json" \
     -d '{"text": "Test", "department": "standard"}'
   ```

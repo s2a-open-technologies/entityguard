@@ -1,23 +1,32 @@
 """
-Medical Chat Sanitizer - FastAPI Application Entry Point.
+EntityGuard - FastAPI Application Entry Point.
+Copyright (C) 2026  Christopher Abanilla
 
-This module provides the main application factory for the FastAPI service
-that anonymizes patient data according to GDPR and HIPAA regulations.
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as
+published by the Free Software Foundation, either version 3 of the
+License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 
 import logging
-from pathlib import Path
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 import uvicorn
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
+from src.admin import admin_router, get_current_user
 from src.views import entityguard_router
-from src.admin import admin_router
-from src.database import init_db, SessionLocal
-from src.database.crud import get_admin_user_by_username, create_admin_user
-from src.database.seed import seed_database
 
 # Logger
 logger = logging.getLogger("uvicorn.error")
@@ -28,30 +37,11 @@ async def lifespan(app: FastAPI):
     """
     Lifespan context manager for startup and shutdown events.
 
-    Handles:
-    - Database initialization
-    - Default admin user seeding
+    The database schema and seed data are managed exclusively by Alembic.
+    Run `uv run alembic upgrade head` before starting the application.
     """
     # Startup
-    logger.info("Initializing database...")
-    init_db()
-
-    # Seed default admin user if not exists
-    db = SessionLocal()
-    try:
-        existing_admin = get_admin_user_by_username(db, "admin")
-        if not existing_admin:
-            create_admin_user(db, "admin", "admin")
-            logger.info("Created default admin user (admin:admin)")
-        else:
-            logger.info("Admin user already exists")
-
-        # Seed default data (entities and recognizers)
-        seed_database(db)
-    except Exception as e:
-        logger.error(f"Error seeding database: {e}")
-    finally:
-        db.close()
+    logger.info("EntityGuard starting up...")
 
     yield
 
@@ -68,14 +58,14 @@ def create_app():
                  and health check endpoint.
     """
     app = FastAPI(
-        title="Medical Chat Sanitizer",
+        title="EntityGuard",
         description="Security layer for processing patient data according to GDPR & HIPAA",
-        version="0.1.0",
+        version="1.0.0",
         lifespan=lifespan
     )
 
     # Mount static files
-    static_dir = Path(__file__).parent / "static"
+    static_dir = Path(__file__).parent / "src" / "static"
     static_dir.mkdir(exist_ok=True)
     app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
@@ -93,8 +83,15 @@ def create_app():
         """
         return {"status": "Service is running"}
 
+    @app.get("/")
+    async def root_redirect(request: Request):
+        """Redirect root to the admin dashboard, or login if not authenticated."""
+        if get_current_user(request):
+            return RedirectResponse(url="/admin/dashboard", status_code=302)
+        return RedirectResponse(url="/admin/login", status_code=302)
+
     return app
 
 
 if __name__ == "__main__":
-    uvicorn.run(create_app, host="0.0.0.0", port=9000)
+    uvicorn.run(create_app, host="0.0.0.0", port=9500)

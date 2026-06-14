@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}Admin{% endblock %} - Medisan</title>
+    <title>{% block title %}Admin{% endblock %} - EntityGuard</title>
     <link rel="stylesheet" href="/static/css/admin.css">
 </head>
 <body>
@@ -11,7 +11,7 @@
         {% if user %}
         <aside class="sidebar">
             <div class="sidebar-header">
-                <h2>Medisan</h2>
+                <h2>EntityGuard</h2>
             </div>
             <nav class="sidebar-nav">
                 <a href="/admin/dashboard" class="nav-item {% if request.url.path == '/admin/dashboard' %}active{% endif %}">

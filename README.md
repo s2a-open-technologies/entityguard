@@ -44,20 +44,20 @@ uv sync
 # 2. Deutsches spaCy-Modell herunterladen (~500 MB, einmalig)
 uv run python -m spacy download de_core_news_lg
 
-# 3. Datenbank anlegen und mit Standard-Daten befüllen
+# 3. Schema und Standard-Daten über Alembic anlegen
 uv run alembic upgrade head
 
 # 4. Dienst starten
 uv run python main.py
 ```
 
-Der Dienst ist unter `http://localhost:9000` erreichbar.  
-Beim ersten Start wird automatisch ein Admin-Benutzer `admin` / `admin` angelegt.
+Der Dienst ist unter `http://localhost:9500` erreichbar.  
+Der Admin-Benutzer `admin` / `admin` wird durch `uv run alembic upgrade head` angelegt.
 
 ### Erster Test
 
 ```bash
-curl -s -X POST http://localhost:9000/api/v1/entityguard/sanitize \
+curl -s -X POST http://localhost:9500/api/v1/entityguard/sanitize \
   -H "Content-Type: application/json" \
   -d '{"text": "Patient Max Mustermann, geb. 15.03.1980, behandelt in der Charité."}' \
   | python -m json.tool
@@ -138,7 +138,7 @@ Lädt alle Patterns neu aus der Datenbank — ohne Neustart.
 Nach Änderungen im Admin-Interface diesen Endpoint aufrufen, um die neuen Patterns sofort zu aktivieren.
 
 ```bash
-curl -X POST http://localhost:9000/api/v1/entityguard/reload
+curl -X POST http://localhost:9500/api/v1/entityguard/reload
 ```
 
 **Response:**
@@ -157,7 +157,7 @@ curl -X POST http://localhost:9000/api/v1/entityguard/reload
 Health-Check Endpoint für Monitoring und Docker.
 
 ```bash
-curl http://localhost:9000/health
+curl http://localhost:9500/health
 # {"status": "Service is running"}
 ```
 
@@ -167,7 +167,7 @@ curl http://localhost:9000/health
 
 Das Admin-Interface ermöglicht die Verwaltung von Pattern Recognizern zur Laufzeit.
 
-**URL:** `http://localhost:9000/admin/login`  
+**URL:** `http://localhost:9500/admin/login`  
 **Standard-Login:** `admin` / `admin` — **Passwort nach dem ersten Login ändern!**
 
 ### Was du damit tun kannst
@@ -183,10 +183,10 @@ Das Admin-Interface ermöglicht die Verwaltung von Pattern Recognizern zur Laufz
 Nach dem Speichern im Admin-Interface muss der Analyzer-Cache neu geladen werden:
 
 ```bash
-curl -X POST http://localhost:9000/api/v1/entityguard/reload
+curl -X POST http://localhost:9500/api/v1/entityguard/reload
 ```
 
-Alternativ: Browser → `http://localhost:9000/admin` → Reload-Button.
+Alternativ: Browser → `http://localhost:9500/admin` → Reload-Button.
 
 ### Neuen Recognizer anlegen
 
@@ -220,9 +220,9 @@ Vollständige Anleitung inkl. Filter-Code, Konfiguration und Docker-Setup: **[do
 
 | Szenario | `api_url` |
 |----------|-----------|
-| Lokal (kein Docker) | `http://localhost:9000/api/v1/entityguard/sanitize` |
-| Docker, gleiches Netzwerk | `http://entityguard:9000/api/v1/entityguard/sanitize` |
-| Docker, anderes Netzwerk | `http://host.docker.internal:9000/api/v1/entityguard/sanitize` |
+| Lokal (kein Docker) | `http://localhost:9500/api/v1/entityguard/sanitize` |
+| Docker, gleiches Netzwerk | `http://entityguard:9500/api/v1/entityguard/sanitize` |
+| Docker, anderes Netzwerk | `http://host.docker.internal:9500/api/v1/entityguard/sanitize` |
 
 ---
 
@@ -239,7 +239,7 @@ Das Dockerfile installiert das spaCy-Modell bereits beim Build — der Container
 ### Health-Check
 
 ```bash
-curl http://localhost:9000/health
+curl http://localhost:9500/health
 ```
 
 ### Logs anzeigen
@@ -250,7 +250,7 @@ docker-compose logs -f entityguard
 
 ### Datenbank persistieren
 
-Das `docker-compose.yml` bindet das `data/`-Verzeichnis als Volume ein. Die SQLite-Datenbank (`data/medisan.db`) bleibt bei `docker-compose down` erhalten.
+Das `docker-compose.yml` bindet das `data/`-Verzeichnis als Volume ein. Die SQLite-Datenbank (`data/entityguard.db`) bleibt bei `docker-compose down` erhalten.
 
 ---
 
@@ -290,13 +290,10 @@ main.py                          FastAPI App Factory, Uvicorn Port 9000
 ├── src/database/
 │   ├── models.py                RecognizerModel, PatternModel, EntityModel, AdminUser
 │   ├── crud.py                  CRUD-Operationen
-│   └── seed.py                  Standard-Daten beim ersten Start
 │
 ├── src/admin/                   Admin-UI (Jinja2, Session-Auth)
 │
-├── seed/cstm_patterns.py        Seed-Daten für Alembic-Migration
-│
-└── alembic/                     Datenbankmigrationen
+└── alembic/                     Datenbankmigrationen (inkl. Seed-Daten)
 ```
 
 ### Datenfluss
@@ -362,7 +359,7 @@ uv run alembic upgrade head
 **Neue Patterns werden nicht erkannt**  
 Nach Änderungen im Admin-Interface den Analyzer-Cache neu laden:
 ```bash
-curl -X POST http://localhost:9000/api/v1/entityguard/reload
+curl -X POST http://localhost:9500/api/v1/entityguard/reload
 ```
 
 **Container startet, aber kein Health-Check**  
@@ -375,6 +372,6 @@ docker-compose up -d
 **OpenWebUI blockiert alle Anfragen**  
 EntityGuard verwendet Fail-Closed: wenn der Dienst nicht erreichbar ist, werden Anfragen blockiert. Dienst-Status prüfen:
 ```bash
-curl http://localhost:9000/health
+curl http://localhost:9500/health
 docker-compose logs entityguard
 ```
