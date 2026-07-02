@@ -17,6 +17,8 @@ dependencies = [
     "jinja2>=3.1.0",
     "passlib[bcrypt]>=1.7.4",
     "python-multipart>=0.0.6",
+    "spacy>=3.8.11",
+    "de_core_news_lg @ https://github.com/explosion/spacy-models/releases/download/de_core_news_lg-3.8.0/de_core_news_lg-3.8.0-py3-none-any.whl",
 ]
 
 [project.optional-dependencies]

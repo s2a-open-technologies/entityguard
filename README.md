@@ -278,7 +278,7 @@ Der `department`-Parameter im API-Request wählt ein Regelwerk aus. Aktuell ist 
 ## Architektur
 
 ```
-main.py                          FastAPI App Factory, Uvicorn Port 9000
+main.py                          FastAPI App Factory, Uvicorn Port 9500
 │
 ├── src/views/anonymizer.py      Router: /api/v1/entityguard/*
 │   └── _analyzer_registry       Department → CustomAnalyzer Cache

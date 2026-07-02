@@ -161,8 +161,15 @@ class CustomAnalyzer:
         recognizer_names = [r.name for r in self.analyzer.registry.recognizers if hasattr(r, 'name')]
         logger.info(f"Available recognizers before cleanup: {recognizer_names}")
 
-        # Keep Spacy and Pattern recognizers
-        keep_recognizers = ['spacy_nlp', 'PatternRecognizer', 'Pattern', 'PatternRecognizerAdapter']
+        # Keep only the built-in recognizers that matter for German medical data
+        keep_recognizers = [
+            'SpacyRecognizer',
+            'EmailRecognizer',
+            'PhoneRecognizer',
+            'PatternRecognizer',
+            'Pattern',
+            'PatternRecognizerAdapter'
+        ]
 
         for name in recognizer_names:
             if name not in keep_recognizers:

@@ -14,9 +14,14 @@ services:
       timeout: 10s
       retries: 3
       start_period: 10s
+    volumes:
+      - entityguard-data:/app/data
     restart: unless-stopped
     networks:
       - entityguard-network
+
+volumes:
+  entityguard-data:
 
 networks:
   entityguard-network:
