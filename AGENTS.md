@@ -44,7 +44,7 @@ Service listens on `http://localhost:9500` (`main.py` hardcodes port `9500`).
 ## Key Entrypoints
 
 - `main.py` — FastAPI factory, Uvicorn runner. No runtime DB seeding.
-- `src/views/anonymizer.py` — API router `/api/v1/entityguard/*` and the cached analyzer registry (`_analyzer_registry`).
+- `src/views/anonymizer.py` — API router `/api/v1/entityguard/*` and the cached singleton analyzer (`_analyzer`).
 - `src/components/cstm_analyzer.py` — `CustomAnalyzer` (Presidio + spaCy + DB patterns).
 - `src/admin/routes.py` — HTML admin UI under `/admin/*`; `GET /` redirects to `/admin/dashboard` if authenticated, otherwise to `/admin/login`.
 - `src/database/` — SQLAlchemy models, CRUD, seeding.
@@ -52,9 +52,9 @@ Service listens on `http://localhost:9500` (`main.py` hardcodes port `9500`).
 ## API / Runtime Gotchas
 
 - `/api/v1/entityguard/sanitize` returns HTTP 500 on any processing error (fail-closed). It never returns raw text on failure.
-- `/api/v1/entityguard/reload` clears the analyzer registry and reloads from the DB. Call this after editing patterns in the admin UI; otherwise edits are not reflected.
+- `/api/v1/entityguard/reload` rebuilds the singleton analyzer from the DB. Call this after editing patterns in the admin UI; otherwise edits are not reflected.
 - Admin UI login: `admin` / `admin`. Change the password immediately in production.
-- Analyzer cache is keyed by `department`; only `"standard"` is currently implemented.
+- `/api/v1/entityguard/sanitize` returns `sanitized_text` plus a `mapping` (placeholder -> original value) for every masked entity occurrence. Placeholders are uniquely indexed per occurrence (e.g. `[EMAIL_1]`, `[EMAIL_2]`), not just per entity type.
 - Placeholders come from the `entities` table; if an entity is inactive, it will not be passed to Presidio for analysis. The `DEFAULT` operator maps to `[SENSITIV]`.
 
 ## Editing Patterns / Entities

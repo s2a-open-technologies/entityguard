@@ -29,7 +29,7 @@ class Filter:
     If the sanitization fails, the request is blocked (fail-closed principle).
 
     Attributes:
-        valves (Valves): Configuration object containing API URL, department ID,
+        valves (Valves): Configuration object containing API URL
             and timeout settings.
     """
 
@@ -41,17 +41,11 @@ class Filter:
 
         Attributes:
             api_url (str): URL of the EntityGuard sanitization endpoint.
-            department_id (str): Department-specific rule set to apply
-                (e.g., "standard", "psychiatrie", "cardio").
             timeout (int): Timeout in seconds for the API request.
         """
         api_url: str = Field(
             default="http://localhost:9500/api/v1/entityguard/sanitize",
             description="EntityGuard API URL"
-        )
-        department_id: str = Field(
-            default="standard",
-            description="Which rule set to apply (e.g., psychiatrie, cardio)"
         )
         timeout: int = Field(
             default=5,
@@ -94,8 +88,7 @@ class Filter:
 
         # Prepare the request payload
         payload = {
-            "text": user_text,
-            "department": self.valves.department_id
+            "text": user_text
         }
 
         try:
@@ -115,7 +108,7 @@ class Filter:
             # Replace the original text with sanitized version
             body['messages'][-1]['content'] = sanitized_text
 
-            logger.info(f"Guardrail active: Text sanitized for department '{self.valves.department_id}'.")
+            logger.info("Guardrail active: Text sanitized.")
             return body
 
         except Exception as e:
@@ -160,7 +153,6 @@ Der Filter wird auf **alle Chat-Anfragen** angewendet, unabhängig vom verwendet
    | Einstellung | Beschreibung | Empfohlener Wert (Docker) |
    |-------------|--------------|---------------------------|
    | `api_url` | URL des EntityGuard-Dienstes | `http://host.docker.internal:9500/api/v1/entityguard/sanitize` |
-   | `department_id` | Regelwerk | `standard` |
    | `timeout` | Timeout in Sekunden | `5` |
 
 6. Klicke auf **Save**
@@ -190,7 +182,6 @@ Der Filter wird **nur für bestimmte Modelle** angewendet. Dies ist nützlich, w
 
    ```
     api_url: http://host.docker.internal:9500/api/v1/entityguard/sanitize
-   department_id: standard
    timeout: 5
    ```
 
@@ -248,7 +239,6 @@ networks:
 **Filter-Konfiguration in OpenWebUI:**
 
 - `api_url`: `http://entityguard:9500/api/v1/entityguard/sanitize`
-- `department_id`: `standard`
 - `timeout`: `5`
 
 ---
@@ -273,19 +263,5 @@ networks:
   ```bash
   curl -X POST http://localhost:9500/api/v1/entityguard/sanitize \
     -H "Content-Type: application/json" \
-    -d '{"text": "Test", "department": "standard"}'
+    -d '{"text": "Test"}'
   ```
-
----
-
-## Abteilungsspezifische Regelwerke
-
-Der Filter unterstützt verschiedene Regelwerke für unterschiedliche Abteilungen:
-
-| `department_id` | Beschreibung |
-|-----------------|--------------|
-| `standard` | Standard-Regelwerk für allgemeine medizinische Kontexte |
-| `psychiatrie` | Strengere Regeln für psychiatrische Daten (zukünftig erweiterbar) |
-| `cardio` | Kardiologie-spezifische Regeln (zukünftig erweiterbar) |
-
-Um ein neues Regelwerk hinzuzufügen, muss in `src/views/anonymizer_view.py` ein neuer Analyzer in der `_analyzer_registry` registriert werden.

@@ -21,8 +21,6 @@ from typing import List, Optional
 
 from presidio_analyzer import AnalyzerEngine, Pattern, PatternRecognizer
 from presidio_analyzer.nlp_engine import NlpEngineProvider
-from presidio_anonymizer import AnonymizerEngine
-from presidio_anonymizer.entities import OperatorConfig
 from sqlalchemy.orm import Session
 
 from src.database.crud import get_entities, get_recognizers
@@ -39,6 +37,26 @@ nlp_configuration = {
         "model_name": "de_core_news_lg"
     }]
 }
+
+
+def _index_placeholder(base_placeholder: str, index: int) -> str:
+    """
+    Turn a static placeholder into a unique, indexed one.
+
+    Inserts the index before the closing bracket if present
+    (e.g. "[EMAIL]" -> "[EMAIL_1]"), otherwise appends it as a suffix
+    (e.g. "EMAIL" -> "EMAIL_1").
+
+    Args:
+        base_placeholder (str): The static placeholder (e.g. "[EMAIL]").
+        index (int): The 1-based occurrence index.
+
+    Returns:
+        str: The indexed placeholder.
+    """
+    if base_placeholder.endswith("]"):
+        return f"{base_placeholder[:-1]}_{index}]"
+    return f"{base_placeholder}_{index}"
 
 
 class DatabasePatternProvider:
@@ -104,8 +122,9 @@ class DatabasePatternProvider:
 
 class CustomAnalyzer:
     """
-    A custom analyzer that combines Presidio's analyzer and anonymizer
-    with custom pattern recognizers for German medical text.
+    A custom analyzer that combines Presidio's analyzer with custom pattern
+    recognizers for German medical text, and replaces detected entities with
+    unique, indexed placeholders.
 
     Patterns are loaded dynamically from the database; there is no static
     fallback.
@@ -113,7 +132,6 @@ class CustomAnalyzer:
     Attributes:
         language (str): The language code for text analysis (default: "de").
         analyzer (AnalyzerEngine): The Presidio analyzer engine.
-        anonymizer (AnonymizerEngine): The Presidio anonymizer engine.
     """
 
     def __init__(self, language: str = "de", db: Optional[Session] = None):
@@ -126,7 +144,6 @@ class CustomAnalyzer:
                 If None, no recognizers are loaded.
         """
         self.language = language
-        self.anonymizer = AnonymizerEngine()
         self._db = db
 
         nlp_provider = NlpEngineProvider(
@@ -244,23 +261,28 @@ class CustomAnalyzer:
         return len(recognizers)
             
 
-    def process_text(self, text: str, db: Optional[Session] = None) -> str:
+    def process_text(self, text: str, db: Optional[Session] = None) -> tuple[str, dict[str, str]]:
         """
         Analyze and anonymize sensitive entities in the given text.
 
-        This method identifies sensitive entities and replaces them with
-        placeholders loaded from the database.
+        This method identifies sensitive entities and replaces each occurrence
+        with a unique, indexed placeholder loaded from the database (e.g.
+        "[EMAIL_1]", "[EMAIL_2]"), so that multiple entities of the same type
+        can be told apart. A mapping of placeholder to original value is
+        returned alongside the anonymized text to allow de-anonymization.
 
         Args:
             text (str): The input text to be anonymized.
             db (Optional[Session]): Database session for loading entity placeholders.
 
         Returns:
-            str: The anonymized text with sensitive entities replaced by
-                 masked placeholders. Returns empty string for whitespace-only input.
+            tuple[str, dict[str, str]]: The anonymized text with sensitive
+                entities replaced by unique masked placeholders, and a mapping
+                of placeholder to original value. Returns ("", {}) for
+                whitespace-only input.
         """
         if not text.strip():
-            return ""
+            return "", {}
 
         # Get all active entities from database
         db_session = db or self._db
@@ -284,19 +306,31 @@ class CustomAnalyzer:
             entities=active_entities if active_entities else None
         )
 
-        # Build operators dynamically from database entities
-        operators = {}
-        for entity_name, placeholder in entity_placeholders.items():
-            operators[entity_name] = OperatorConfig("replace", {"new_value": placeholder})
+        # Replace each match with a unique, indexed placeholder (e.g.
+        # "[EMAIL_1]", "[EMAIL_2]") and record the original value in
+        # `mapping`, so the same entity type can appear more than once in a
+        # text without becoming ambiguous. Matches are applied left-to-right;
+        # a match that overlaps one already placed is skipped.
+        mapping: dict[str, str] = {}
+        counters: dict[str, int] = {}
+        output_parts: List[str] = []
+        last_end = 0
 
-        # Always provide DEFAULT fallback
-        operators["DEFAULT"] = OperatorConfig("replace", {"new_value": "[SENSITIV]"})
+        sorted_results = sorted(results, key=lambda r: (r.start, r.start - r.end))
+        for result in sorted_results:
+            if result.start < last_end:
+                continue
 
-        anonymized_results = self.anonymizer.anonymize(
-            text=text,
-            analyzer_results=results,
-            operators=operators
-        )
+            base_placeholder = entity_placeholders.get(result.entity_type, "[SENSITIV]")
+            counters[result.entity_type] = counters.get(result.entity_type, 0) + 1
+            indexed_placeholder = _index_placeholder(base_placeholder, counters[result.entity_type])
+            mapping[indexed_placeholder] = text[result.start:result.end]
 
-        return anonymized_results.text
+            output_parts.append(text[last_end:result.start])
+            output_parts.append(indexed_placeholder)
+            last_end = result.end
+
+        output_parts.append(text[last_end:])
+
+        return "".join(output_parts), mapping
     

@@ -31,25 +31,25 @@ entityguard_router = APIRouter(prefix="/api/v1/entityguard", tags=["Anonymizer"]
 # Logger
 logger = logging.getLogger("uvicorn.error")
 
-# Dynamic registration of pattern registry
-_analyzer_registry: dict[str, CustomAnalyzer] = {}
+# Lazily-created singleton analyzer, rebuilt on /reload
+_analyzer: Optional[CustomAnalyzer] = None
 
 
-def _get_or_create_analyzer(department: str = "standard") -> CustomAnalyzer:
+def _get_or_create_analyzer() -> CustomAnalyzer:
     """
-    Get or create an analyzer for the given department.
+    Get or create the analyzer.
 
-    Analyzers are cached in the registry and reloaded from database
-    when they don't exist.
+    The analyzer is cached and reloaded from the database on /reload.
     """
-    if department not in _analyzer_registry:
+    global _analyzer
+    if _analyzer is None:
         db = SessionLocal()
         try:
-            _analyzer_registry[department] = CustomAnalyzer(language="de", db=db)
-            logger.info(f"Created analyzer for department '{department}'")
+            _analyzer = CustomAnalyzer(language="de", db=db)
+            logger.info("Created analyzer")
         finally:
             db.close()
-    return _analyzer_registry[department]
+    return _analyzer
 
 
 class SanitizeRequest(BaseModel):
@@ -58,11 +58,8 @@ class SanitizeRequest(BaseModel):
 
     Attributes:
         text (str): The text to be anonymized.
-        department (Optional[str]): Department-specific rule set to apply.
-            Defaults to "standard".
     """
     text: str
-    department: Optional[str] = "standard"
 
 
 class SanitizeResponse(BaseModel):
@@ -71,10 +68,11 @@ class SanitizeResponse(BaseModel):
 
     Attributes:
         sanitized_text (str): The anonymized text with sensitive entities masked.
-        applied_department (str): The department rule set that was applied.
+        mapping (dict[str, str]): Mapping of placeholder to original value,
+            for each masked entity occurrence.
     """
     sanitized_text: str
-    applied_department: str
+    mapping: dict[str, str]
 
 
 class ReloadResponse(BaseModel):
@@ -106,10 +104,8 @@ async def reload_patterns():
     Raises:
         HTTPException: Status code 500 if the reload fails.
     """
+    global _analyzer
     try:
-        # Clear all cached analyzers - they will be recreated on next request
-        _analyzer_registry.clear()
-
         # Create a fresh analyzer to verify it works and get count
         db = SessionLocal()
         try:
@@ -117,7 +113,7 @@ async def reload_patterns():
             recognizers_list = list(analyzer.analyzer.registry.recognizers)
             # Subtract built-in recognizers (spacy_nlp, pattern_recognizer)
             custom_count = max(0, len(recognizers_list) - 1)
-            _analyzer_registry["standard"] = analyzer
+            _analyzer = analyzer
             return ReloadResponse(
                 success=True,
                 recognizers_count=custom_count,
@@ -136,18 +132,18 @@ async def reload_patterns():
 @entityguard_router.post("/sanitize", response_model=SanitizeResponse)
 async def sanitize(request: SanitizeRequest):
     """
-    Receive text and return the anonymized version.
+    Receive text and return the anonymized version along with a mapping.
 
     This endpoint accepts text input and processes it through the CustomAnalyzer
-    to detect and mask sensitive entities. The department parameter allows for
-    department-specific guardrail rules to be applied.
+    to detect and mask sensitive entities. The response includes a mapping of
+    placeholder to original value for each masked entity occurrence, allowing
+    the masked text to be de-anonymized later.
 
     Args:
-        request (SanitizeRequest): The sanitization request containing text
-            and optional department identifier.
+        request (SanitizeRequest): The sanitization request containing text.
 
     Returns:
-        SanitizeResponse: The anonymized text and the applied department identifier.
+        SanitizeResponse: The anonymized text and the placeholder-to-original mapping.
 
     Raises:
         HTTPException: Status code 500 if the sanitization process fails.
@@ -155,14 +151,13 @@ async def sanitize(request: SanitizeRequest):
             passing through unprocessed text.
     """
     try:
-        department = request.department or "standard"
-        analyzer = _get_or_create_analyzer(department)
+        analyzer = _get_or_create_analyzer()
 
-        result_text = analyzer.process_text(request.text)
+        sanitized_text, mapping = analyzer.process_text(request.text)
 
         return SanitizeResponse(
-            sanitized_text=result_text,
-            applied_department=department
+            sanitized_text=sanitized_text,
+            mapping=mapping
         )
 
     except Exception as e:

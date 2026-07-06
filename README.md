@@ -66,8 +66,12 @@ curl -s -X POST http://localhost:9500/api/v1/entityguard/sanitize \
 Erwartete Antwort:
 ```json
 {
-  "sanitized_text": "Patient [NAME], geb. [DATUM/ZEIT], behandelt in [ADRESSE/ORT].",
-  "applied_department": "standard"
+  "sanitized_text": "Patient [NAME_1], geb. [DATUM/ZEIT_1], behandelt in [ADRESSE/ORT_1].",
+  "mapping": {
+    "[NAME_1]": "Max Mustermann",
+    "[DATUM/ZEIT_1]": "15.03.1980",
+    "[ADRESSE/ORT_1]": "der Charité"
+  }
 }
 ```
 
@@ -109,23 +113,25 @@ Anonymisiert den übergebenen Text.
 **Request:**
 ```json
 {
-  "text": "Der zu anonymisierende Text.",
-  "department": "standard"
+  "text": "Der zu anonymisierende Text."
 }
 ```
 
 | Feld | Typ | Pflicht | Beschreibung |
 |------|-----|---------|--------------|
 | `text` | string | ja | Zu anonymisierender Text |
-| `department` | string | nein | Regelwerk (default: `standard`) |
 
 **Response:**
 ```json
 {
   "sanitized_text": "Der anonymisierte Text.",
-  "applied_department": "standard"
+  "mapping": {
+    "[NAME_1]": "Original-Wert des ersten erkannten NAME-Treffers"
+  }
 }
 ```
+
+Jede maskierte Entität erhält einen eindeutigen, durchnummerierten Platzhalter (z.B. `[EMAIL_1]`, `[EMAIL_2]` bei zwei E-Mail-Adressen im selben Text). Das `mapping` bildet jeden Platzhalter auf seinen Originalwert ab und erlaubt so eine spätere De-Anonymisierung des Textes.
 
 **Fehlerverhalten:** Bei einem internen Fehler gibt der Dienst HTTP 500 zurück und lässt den Text **nicht** unverarbeitet durch (Fail-Closed-Prinzip).
 
@@ -269,10 +275,6 @@ Das `docker-compose.yml` bindet das `data/`-Verzeichnis als Volume ein. Die SQLi
 | `default_score_threshold` | Mindest-Confidence für Entity-Erkennung | `0.4` |
 | `language` | Sprachcode für die Analyse | `de` |
 
-### Abteilungsspezifische Regelwerke
-
-Der `department`-Parameter im API-Request wählt ein Regelwerk aus. Aktuell ist nur `standard` implementiert. Um ein neues Regelwerk hinzuzufügen, muss in `src/views/anonymizer.py` ein neuer Analyzer in `_analyzer_registry` registriert werden.
-
 ---
 
 ## Architektur
@@ -281,7 +283,7 @@ Der `department`-Parameter im API-Request wählt ein Regelwerk aus. Aktuell ist 
 main.py                          FastAPI App Factory, Uvicorn Port 9500
 │
 ├── src/views/anonymizer.py      Router: /api/v1/entityguard/*
-│   └── _analyzer_registry       Department → CustomAnalyzer Cache
+│   └── _analyzer                Gecachter CustomAnalyzer (Singleton)
 │
 ├── src/components/
 │   └── cstm_analyzer.py         CustomAnalyzer (Presidio + spaCy)

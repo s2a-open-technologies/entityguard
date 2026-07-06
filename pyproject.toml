@@ -1,6 +1,6 @@
 [project]
 name = "entityguard"
-version = "1.0.0"
+version = "1.0.1"
 description = "EntityGuard - Security layer for anonymizing patient data according to GDPR and HIPAA regulations"
 readme = "README.md"
 requires-python = ">=3.13"
