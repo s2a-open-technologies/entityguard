@@ -16,7 +16,7 @@ document.addEventListener('DOMContentLoaded', function() {
             const pattern = previewPattern.value;
 
             if (!text || !pattern) {
-                alert('Please enter both text and pattern');
+                alert('Bitte Text und Muster eingeben');
                 return;
             }
 
@@ -34,22 +34,22 @@ document.addEventListener('DOMContentLoaded', function() {
 
                 if (result.success) {
                     if (result.matches.length === 0) {
-                        previewMatches.innerHTML = '<p style="color: #64748b;">No matches found</p>';
+                        previewMatches.innerHTML = '<p style="color: #64748b;">Keine Treffer gefunden</p>';
                     } else {
                         previewMatches.innerHTML = result.matches.map(m =>
                             `<div class="match-item">
-                                <strong>Match:</strong> "${escapeHtml(m.match)}"<br>
+                                <strong>Treffer:</strong> "${escapeHtml(m.match)}"<br>
                                 <span style="color: #64748b;">Position: ${m.start}-${m.end}</span>
                             </div>`
                         ).join('');
                     }
                     previewResults.style.display = 'block';
                 } else {
-                    previewMatches.innerHTML = `<p style="color: #dc2626;">Error: ${escapeHtml(result.error)}</p>`;
+                    previewMatches.innerHTML = `<p style="color: #dc2626;">Fehler: ${escapeHtml(result.error)}</p>`;
                     previewResults.style.display = 'block';
                 }
             } catch (error) {
-                previewMatches.innerHTML = `<p style="color: #dc2626;">Error: ${escapeHtml(error.message)}</p>`;
+                previewMatches.innerHTML = `<p style="color: #dc2626;">Fehler: ${escapeHtml(error.message)}</p>`;
                 previewResults.style.display = 'block';
             }
         });

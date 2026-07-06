@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+
+{% block title %}Anleitung{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Anleitung</h1>
+</div>
+
+<div class="section">
+    <h2>Was ist EntityGuard?</h2>
+    <p class="help-text">
+        EntityGuard ist eine Datenschutz-Schutzschicht für LLM-gestützte Anwendungen. Bevor Texte an ein Sprachmodell
+        gesendet werden, erkennt und anonymisiert EntityGuard sensible Daten (z. B. Patienten-IDs, Namen, Diagnosen)
+        auf Basis von Microsoft Presidio und einem deutschen spaCy-Sprachmodell, um DSGVO- und HIPAA-Vorgaben
+        einzuhalten. Über dieses Admin-Interface konfigurieren Sie, welche Datentypen erkannt und wie sie ersetzt
+        werden.
+    </p>
+</div>
+
+<div class="section">
+    <h2>Grundbegriffe</h2>
+    <div class="detail-grid">
+        <div class="detail-card">
+            <h3>Entität</h3>
+            <p class="help-text mb-0">
+                Der Datentyp, der geschützt werden soll (z. B. <code>PATIENT_ID</code>). Jede Entität hat einen
+                Platzhalter (z. B. <code>[PATIENT_ID]</code>), der die erkannten Werte im anonymisierten Text ersetzt.
+            </p>
+        </div>
+        <div class="detail-card">
+            <h3>Erkennungsregel</h3>
+            <p class="help-text mb-0">
+                Verknüpft eine Entität mit den Regeln, nach denen sie im Text gefunden wird. Eine Erkennungsregel
+                besteht aus einem oder mehreren Mustern und optionalen Kontextwörtern.
+            </p>
+        </div>
+        <div class="detail-card">
+            <h3>Muster</h3>
+            <p class="help-text mb-0">
+                Ein regulärer Ausdruck (Regex), der konkrete Textstellen erkennt, z. B. eine Telefonnummer oder ein
+                bestimmtes ID-Format. Jedes Muster hat einen Score (0.0–1.0), der die Erkennungssicherheit angibt.
+            </p>
+        </div>
+        <div class="detail-card">
+            <h3>Kontextwörter</h3>
+            <p class="help-text mb-0">
+                Begriffe, die in der Nähe eines Treffers die Erkennung wahrscheinlicher machen (z. B. "Patient",
+                "Fall", "Akte"). Sie verbessern die Trefferquote, ohne selbst als Muster zu dienen.
+            </p>
+        </div>
+    </div>
+</div>
+
+<div class="section">
+    <h2>Neue Erkennung einrichten</h2>
+    <p class="help-text">So legen Sie Schritt für Schritt eine neue Erkennung für einen sensiblen Datentyp an:</p>
+    <ol class="pl-5 grid gap-3 text-slate-800 list-decimal">
+        <li>
+            <strong>Entität anlegen</strong> unter
+            <a href="/admin/entities/create">Entitäten &rarr; Entität erstellen</a>. Vergeben Sie einen eindeutigen
+            Namen und einen Platzhalter für die anonymisierte Ausgabe.
+        </li>
+        <li>
+            <strong>Erkennungsregel erstellen</strong> unter
+            <a href="/admin/recognizers/create">Erkennungsregeln &rarr; Erkennungsregel erstellen</a> und der zuvor
+            angelegten Entität zuweisen.
+        </li>
+        <li>
+            <strong>Muster hinzufügen</strong> in der Detailansicht der Erkennungsregel: Regulären Ausdruck und Score
+            eingeben.
+        </li>
+        <li>
+            <strong>Kontextwörter ergänzen</strong> (optional), um die Trefferquote in echten Texten zu erhöhen.
+        </li>
+        <li>
+            <strong>Muster testen</strong> mit der Muster-Vorschau auf der Detailseite der Erkennungsregel, bevor Sie
+            live gehen.
+        </li>
+        <li>
+            <strong>Erkennungsregel aktivieren</strong> (Status "Aktiv"), damit sie bei der Textverarbeitung
+            berücksichtigt wird.
+        </li>
+    </ol>
+</div>
+
+<div class="section">
+    <h2>Tipps</h2>
+    <ul class="pl-5 grid gap-2 text-slate-800 list-disc">
+        <li>Der <strong>Score</strong> gibt an, wie sicher ein Treffer ist: 1.0 bedeutet höchste Konfidenz, niedrigere
+            Werte eignen sich für unscharfe oder mehrdeutige Muster.</li>
+        <li>Reguläre Ausdrücke folgen der Python-<code>re</code>-Syntax. Testen Sie neue Muster immer zuerst mit der
+            Muster-Vorschau.</li>
+        <li>Inaktive Erkennungsregeln bleiben erhalten, werden aber bei der Textverarbeitung ignoriert – nützlich zum
+            Vorbereiten oder vorübergehenden Deaktivieren einzelner Regeln.</li>
+    </ul>
+</div>
+{% endblock %}

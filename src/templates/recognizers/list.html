@@ -4,21 +4,27 @@
 
 {% block content %}
 <div class="page-header">
-    <h1>Recognizers</h1>
-    <a href="/admin/recognizers/create" class="btn btn-primary">Create Recognizer</a>
+    <h1>Erkennungsregeln</h1>
+    <a href="/admin/recognizers/create" class="btn btn-primary">Erkennungsregel erstellen</a>
 </div>
+
+<p class="help-text">
+    Eine Erkennungsregel verknüpft eine Entität mit den Mustern (Regex) und Kontextwörtern, mit denen sie im Text
+    gefunden wird. Details und Konfiguration finden Sie in der jeweiligen Detailansicht. Mehr dazu in der
+    <a href="/admin/howto">Anleitung</a>.
+</p>
 
 {% if recognizers %}
 <table class="data-table">
     <thead>
         <tr>
             <th>Name</th>
-            <th>Entity</th>
-            <th>Language</th>
+            <th>Entität (Typ)</th>
+            <th>Sprache</th>
             <th>Status</th>
-            <th>Patterns</th>
-            <th>Context Words</th>
-            <th>Actions</th>
+            <th>Muster</th>
+            <th>Kontextwörter</th>
+            <th>Aktionen</th>
         </tr>
     </thead>
     <tbody>
@@ -31,14 +37,14 @@
             <td>{{ recognizer.supported_language }}</td>
             <td>
                 <span class="badge {% if recognizer.is_active %}badge-success{% else %}badge-secondary{% endif %}">
-                    {% if recognizer.is_active %}Active{% else %}Inactive{% endif %}
+                    {% if recognizer.is_active %}Aktiv{% else %}Inaktiv{% endif %}
                 </span>
             </td>
             <td>{{ recognizer.patterns|length }}</td>
             <td>{{ recognizer.context_words|length }}</td>
             <td class="actions">
-                <a href="/admin/recognizers/{{ recognizer.id }}" class="btn btn-sm btn-secondary">View</a>
-                <a href="/admin/recognizers/{{ recognizer.id }}/edit" class="btn btn-sm btn-secondary">Edit</a>
+                <a href="/admin/recognizers/{{ recognizer.id }}" class="btn btn-sm btn-secondary">Ansehen</a>
+                <a href="/admin/recognizers/{{ recognizer.id }}/edit" class="btn btn-sm btn-secondary">Bearbeiten</a>
             </td>
         </tr>
         {% endfor %}
@@ -46,8 +52,8 @@
 </table>
 {% else %}
 <div class="empty-state">
-    <p>No recognizers configured yet.</p>
-    <a href="/admin/recognizers/create" class="btn btn-primary">Create your first recognizer</a>
+    <p>Noch keine Erkennungsregeln konfiguriert.</p>
+    <a href="/admin/recognizers/create" class="btn btn-primary">Erste Erkennungsregel erstellen</a>
 </div>
 {% endif %}
 {% endblock %}

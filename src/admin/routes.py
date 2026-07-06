@@ -62,7 +62,7 @@ async def login_submit(
     """Handle login form submission."""
     user_id = authenticate_user(username, password)
     if not user_id:
-        context = get_template_context(request, error="Invalid username or password")
+        context = get_template_context(request, error="Ungültiger Benutzername oder ungültiges Passwort")
         return templates.TemplateResponse("login.html", context, status_code=401)
 
     session_id = create_session(user_id)
@@ -113,6 +113,19 @@ async def dashboard(request: Request, user: dict = Depends(require_auth)):
 
 
 # ============================================================================
+# Anleitung (HowTo)
+# ============================================================================
+
+@admin_router.get("/howto", response_class=HTMLResponse)
+async def howto_page(request: Request, user: dict = Depends(require_auth)):
+    """Render the HowTo / guide page."""
+    return templates.TemplateResponse(
+        "howto.html",
+        get_template_context(request)
+    )
+
+
+# ============================================================================
 # Recognizers
 # ============================================================================
 
@@ -159,7 +172,7 @@ async def create_recognizer_submit(
             context = get_template_context(
                 request,
                 entities=entities,
-                error=f"Recognizer with name '{name}' already exists",
+                error=f"Eine Erkennungsregel mit dem Namen '{name}' existiert bereits",
                 name=name,
                 supported_entity=supported_entity,
                 supported_language=supported_language
@@ -189,7 +202,7 @@ async def view_recognizer(
     try:
         recognizer = get_recognizer(db, recognizer_id)
         if not recognizer:
-            raise HTTPException(status_code=404, detail="Recognizer not found")
+            raise HTTPException(status_code=404, detail="Erkennungsregel nicht gefunden")
 
         patterns = get_patterns_by_recognizer(db, recognizer_id)
         context_words = get_context_words_by_recognizer(db, recognizer_id)
@@ -216,7 +229,7 @@ async def edit_recognizer_page(
     try:
         recognizer = get_recognizer(db, recognizer_id)
         if not recognizer:
-            raise HTTPException(status_code=404, detail="Recognizer not found")
+            raise HTTPException(status_code=404, detail="Erkennungsregel nicht gefunden")
 
         entities = get_entities(db, active_only=True)
         context = get_template_context(request, recognizer=recognizer, entities=entities)
@@ -240,7 +253,7 @@ async def edit_recognizer_submit(
     try:
         recognizer = get_recognizer(db, recognizer_id)
         if not recognizer:
-            raise HTTPException(status_code=404, detail="Recognizer not found")
+            raise HTTPException(status_code=404, detail="Erkennungsregel nicht gefunden")
 
         # Check if name already exists (for another recognizer)
         existing = get_recognizer_by_name(db, name)
@@ -250,7 +263,7 @@ async def edit_recognizer_submit(
                 request,
                 recognizer=recognizer,
                 entities=entities,
-                error=f"Recognizer with name '{name}' already exists"
+                error=f"Eine Erkennungsregel mit dem Namen '{name}' existiert bereits"
             )
             return templates.TemplateResponse("recognizers/edit.html", context, status_code=400)
 
@@ -310,7 +323,7 @@ async def create_pattern_submit(
                 recognizer=recognizer,
                 patterns=patterns,
                 context_words=context_words,
-                error=f"Invalid regex: {str(e)}",
+                error=f"Ungültiger regulärer Ausdruck: {str(e)}",
                 pattern_name=name,
                 pattern_regex=regex,
                 pattern_score=score
@@ -328,7 +341,7 @@ async def create_pattern_submit(
                 recognizer=recognizer,
                 patterns=patterns,
                 context_words=context_words,
-                error=f"Pattern with name '{name}' already exists"
+                error=f"Ein Muster mit dem Namen '{name}' existiert bereits"
             )
             return templates.TemplateResponse("recognizers/view.html", context, status_code=400)
 
@@ -352,7 +365,7 @@ async def edit_pattern_submit(
     try:
         pattern = get_pattern(db, pattern_id)
         if not pattern:
-            raise HTTPException(status_code=404, detail="Pattern not found")
+            raise HTTPException(status_code=404, detail="Muster nicht gefunden")
 
         # Validate regex
         try:
@@ -360,7 +373,7 @@ async def edit_pattern_submit(
         except re.error as e:
             context = get_template_context(
                 request,
-                error=f"Invalid regex: {str(e)}",
+                error=f"Ungültiger regulärer Ausdruck: {str(e)}",
                 pattern=pattern
             )
             return templates.TemplateResponse("patterns/edit.html", context, status_code=400)
@@ -382,7 +395,7 @@ async def delete_pattern_submit(
     try:
         pattern = get_pattern(db, pattern_id)
         if not pattern:
-            raise HTTPException(status_code=404, detail="Pattern not found")
+            raise HTTPException(status_code=404, detail="Muster nicht gefunden")
 
         recognizer_id = pattern.recognizer_id
         delete_pattern(db, pattern_id)
@@ -402,7 +415,7 @@ async def edit_pattern_page(
     try:
         pattern = get_pattern(db, pattern_id)
         if not pattern:
-            raise HTTPException(status_code=404, detail="Pattern not found")
+            raise HTTPException(status_code=404, detail="Muster nicht gefunden")
 
         context = get_template_context(request, pattern=pattern)
         return templates.TemplateResponse("patterns/edit.html", context)
@@ -441,7 +454,7 @@ async def delete_context_word_submit(
     try:
         context_word = get_context_word(db, context_word_id)
         if not context_word:
-            raise HTTPException(status_code=404, detail="Context word not found")
+            raise HTTPException(status_code=404, detail="Kontextwort nicht gefunden")
 
         recognizer_id = context_word.recognizer_id
         delete_context_word(db, context_word_id)
@@ -477,25 +490,25 @@ async def change_password_submit(
         # Verify current password
         db_user = get_admin_user(db, user["id"])
         if not db_user:
-            raise HTTPException(status_code=404, detail="User not found")
+            raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
 
         if not verify_password(current_password, db_user.password_hash):
-            context = get_template_context(request, error="Current password is incorrect")
+            context = get_template_context(request, error="Das aktuelle Passwort ist falsch")
             return templates.TemplateResponse("profile/password.html", context, status_code=400)
 
         # Validate new password
         if len(new_password) < 8:
-            context = get_template_context(request, error="Password must be at least 8 characters")
+            context = get_template_context(request, error="Das Passwort muss mindestens 8 Zeichen lang sein")
             return templates.TemplateResponse("profile/password.html", context, status_code=400)
 
         if new_password != confirm_password:
-            context = get_template_context(request, error="Passwords do not match")
+            context = get_template_context(request, error="Die Passwörter stimmen nicht überein")
             return templates.TemplateResponse("profile/password.html", context, status_code=400)
 
         # Update password
         update_admin_password(db, user["id"], new_password)
 
-        context = get_template_context(request, success="Password changed successfully")
+        context = get_template_context(request, success="Passwort erfolgreich geändert")
         return templates.TemplateResponse("profile/password.html", context)
     finally:
         db.close()
@@ -576,7 +589,7 @@ async def create_entity_submit(
         if existing:
             context = get_template_context(
                 request,
-                error=f"Entity with name '{name}' already exists",
+                error=f"Eine Entität mit dem Namen '{name}' existiert bereits",
                 name=name,
                 placeholder=placeholder,
                 description=description
@@ -606,7 +619,7 @@ async def edit_entity_page(
     try:
         entity = get_entity(db, entity_id)
         if not entity:
-            raise HTTPException(status_code=404, detail="Entity not found")
+            raise HTTPException(status_code=404, detail="Entität nicht gefunden")
 
         context = get_template_context(request, entity=entity)
         return templates.TemplateResponse("entities/edit.html", context)
@@ -629,7 +642,7 @@ async def edit_entity_submit(
     try:
         entity = get_entity(db, entity_id)
         if not entity:
-            raise HTTPException(status_code=404, detail="Entity not found")
+            raise HTTPException(status_code=404, detail="Entität nicht gefunden")
 
         # Check if name already exists (for another entity)
         existing = get_entity_by_name(db, name)
@@ -637,7 +650,7 @@ async def edit_entity_submit(
             context = get_template_context(
                 request,
                 entity=entity,
-                error=f"Entity with name '{name}' already exists"
+                error=f"Eine Entität mit dem Namen '{name}' existiert bereits"
             )
             return templates.TemplateResponse("entities/edit.html", context, status_code=400)
 

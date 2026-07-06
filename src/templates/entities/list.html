@@ -4,13 +4,15 @@
 
 {% block content %}
 <div class="page-header">
-    <h1>Entities</h1>
-    <a href="/admin/entities/create" class="btn btn-primary">Create Entity</a>
+    <h1>Entitäten</h1>
+    <a href="/admin/entities/create" class="btn btn-primary">Entität erstellen</a>
 </div>
 
 <p class="help-text">
-    Entities define the types of sensitive data that can be detected. Each entity has a name (used internally)
-    and a placeholder (used in anonymized output). Select entities when creating recognizers.
+    Entitäten definieren die Arten sensibler Daten, die erkannt werden können (z. B. Patienten-IDs oder Namen). Jede
+    Entität hat einen Namen (intern verwendet) und einen Platzhalter (ersetzt den erkannten Wert im anonymisierten
+    Text). Entitäten werden beim Erstellen von Erkennungsregeln ausgewählt. Mehr dazu in der
+    <a href="/admin/howto">Anleitung</a>.
 </p>
 
 {% if entities %}
@@ -18,10 +20,10 @@
     <thead>
         <tr>
             <th>Name</th>
-            <th>Placeholder</th>
-            <th>Description</th>
+            <th>Platzhalter</th>
+            <th>Beschreibung</th>
             <th>Status</th>
-            <th>Actions</th>
+            <th>Aktionen</th>
         </tr>
     </thead>
     <tbody>
@@ -32,13 +34,13 @@
             <td>{{ entity.description or '-' }}</td>
             <td>
                 <span class="badge {% if entity.is_active %}badge-success{% else %}badge-secondary{% endif %}">
-                    {% if entity.is_active %}Active{% else %}Inactive{% endif %}
+                    {% if entity.is_active %}Aktiv{% else %}Inaktiv{% endif %}
                 </span>
             </td>
             <td class="actions">
-                <a href="/admin/entities/{{ entity.id }}/edit" class="btn btn-secondary btn-sm">Edit</a>
-                <form method="POST" action="/admin/entities/{{ entity.id }}/delete" class="inline-form" onsubmit="return confirm('Delete this entity?')">
-                    <button type="submit" class="btn btn-danger btn-sm">Delete</button>
+                <a href="/admin/entities/{{ entity.id }}/edit" class="btn btn-secondary btn-sm">Bearbeiten</a>
+                <form method="POST" action="/admin/entities/{{ entity.id }}/delete" class="inline-form" onsubmit="return confirm('Diese Entität wirklich löschen?')">
+                    <button type="submit" class="btn btn-danger btn-sm">Löschen</button>
                 </form>
             </td>
         </tr>
@@ -46,6 +48,6 @@
     </tbody>
 </table>
 {% else %}
-<p class="empty-state">No entities defined. <a href="/admin/entities/create">Create your first entity</a>.</p>
+<p class="empty-state">Noch keine Entitäten definiert. <a href="/admin/entities/create">Erste Entität erstellen</a>.</p>
 {% endif %}
 {% endblock %}

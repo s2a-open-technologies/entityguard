@@ -1,0 +1,14 @@
+{
+  "name": "entityguard-admin-ui",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Build tooling for the EntityGuard admin interface stylesheet (Tailwind CSS). No runtime Node dependency - output is a static CSS file committed to src/static/css/admin.css.",
+  "scripts": {
+    "build:css": "tailwindcss -i src/static/css/tailwind-input.css -o src/static/css/admin.css --minify",
+    "watch:css": "tailwindcss -i src/static/css/tailwind-input.css -o src/static/css/admin.css --watch"
+  },
+  "devDependencies": {
+    "@tailwindcss/cli": "^4.3.2",
+    "tailwindcss": "^4.3.2"
+  }
+}

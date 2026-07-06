@@ -13,3 +13,6 @@ wheels/
 # custom
 data/
 .pytest_cache
+
+# Node (Tailwind build tooling only - no runtime dependency)
+node_modules/

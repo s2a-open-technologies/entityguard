@@ -5,14 +5,14 @@
 {% block content %}
 <div class="page-header">
     <div class="breadcrumb">
-        <a href="/admin/recognizers">Recognizers</a> /
+        <a href="/admin/recognizers">Erkennungsregeln</a> /
         <span>{{ recognizer.name }}</span>
     </div>
     <h1>{{ recognizer.name }}</h1>
     <div class="header-actions">
-        <a href="/admin/recognizers/{{ recognizer.id }}/edit" class="btn btn-secondary">Edit</a>
-        <form method="POST" action="/admin/recognizers/{{ recognizer.id }}/delete" class="inline-form" onsubmit="return confirm('Are you sure you want to delete this recognizer? This will also delete all associated patterns and context words.');">
-            <button type="submit" class="btn btn-danger">Delete</button>
+        <a href="/admin/recognizers/{{ recognizer.id }}/edit" class="btn btn-secondary">Bearbeiten</a>
+        <form method="POST" action="/admin/recognizers/{{ recognizer.id }}/delete" class="inline-form" onsubmit="return confirm('Diese Erkennungsregel wirklich löschen? Dabei werden auch alle zugehörigen Muster und Kontextwörter gelöscht.');">
+            <button type="submit" class="btn btn-danger">Löschen</button>
         </form>
     </div>
 </div>
@@ -21,38 +21,42 @@
     <div class="detail-card">
         <h3>Details</h3>
         <dl class="detail-list">
-            <dt>Entity</dt>
+            <dt>Zugeordnete Entität</dt>
             <dd><code>{{ recognizer.supported_entity }}</code></dd>
-            <dt>Language</dt>
+            <dt>Sprache</dt>
             <dd>{{ recognizer.supported_language }}</dd>
             <dt>Status</dt>
             <dd>
                 <span class="badge {% if recognizer.is_active %}badge-success{% else %}badge-secondary{% endif %}">
-                    {% if recognizer.is_active %}Active{% else %}Inactive{% endif %}
+                    {% if recognizer.is_active %}Aktiv{% else %}Inaktiv{% endif %}
                 </span>
             </dd>
-            <dt>Created</dt>
-            <dd>{{ recognizer.created_at.strftime('%Y-%m-%d %H:%M') if recognizer.created_at else 'N/A' }}</dd>
-            <dt>Updated</dt>
-            <dd>{{ recognizer.updated_at.strftime('%Y-%m-%d %H:%M') if recognizer.updated_at else 'N/A' }}</dd>
+            <dt>Erstellt</dt>
+            <dd>{{ recognizer.created_at.strftime('%Y-%m-%d %H:%M') if recognizer.created_at else 'k. A.' }}</dd>
+            <dt>Aktualisiert</dt>
+            <dd>{{ recognizer.updated_at.strftime('%Y-%m-%d %H:%M') if recognizer.updated_at else 'k. A.' }}</dd>
         </dl>
     </div>
 </div>
 
 <div class="section">
-    <h2>Patterns ({{ patterns|length }})</h2>
+    <h2>Muster ({{ patterns|length }})</h2>
+    <p class="help-text">
+        Muster sind reguläre Ausdrücke (Regex), die konkrete Textstellen erkennen, z. B. eine Telefonnummer oder ein
+        ID-Format. Der Score (0.0–1.0) gibt die Erkennungssicherheit an.
+    </p>
 
     <form method="POST" action="/admin/recognizers/{{ recognizer.id }}/patterns/create" class="form-inline">
         <div class="form-group">
-            <input type="text" name="name" placeholder="Pattern name" required>
+            <input type="text" name="name" placeholder="Name des Musters" required>
         </div>
         <div class="form-group flex-grow">
-            <input type="text" name="regex" placeholder="Regular expression" required>
+            <input type="text" name="regex" placeholder="Regulärer Ausdruck" required>
         </div>
         <div class="form-group">
             <input type="number" name="score" step="0.01" min="0" max="1" placeholder="Score" value="0.5" required>
         </div>
-        <button type="submit" class="btn btn-primary btn-sm">Add Pattern</button>
+        <button type="submit" class="btn btn-primary btn-sm">Muster hinzufügen</button>
     </form>
 
     {% if patterns %}
@@ -62,7 +66,7 @@
                 <th>Name</th>
                 <th>Regex</th>
                 <th>Score</th>
-                <th>Actions</th>
+                <th>Aktionen</th>
             </tr>
         </thead>
         <tbody>
@@ -72,9 +76,9 @@
                 <td class="regex-cell"><code>{{ pattern.regex }}</code></td>
                 <td>{{ pattern.score }}</td>
                 <td class="actions">
-                    <a href="/admin/patterns/{{ pattern.id }}/edit" class="btn btn-sm btn-secondary">Edit</a>
-                    <form method="POST" action="/admin/patterns/{{ pattern.id }}/delete" class="inline-form" onsubmit="return confirm('Delete this pattern?');">
-                        <button type="submit" class="btn btn-sm btn-danger">Delete</button>
+                    <a href="/admin/patterns/{{ pattern.id }}/edit" class="btn btn-sm btn-secondary">Bearbeiten</a>
+                    <form method="POST" action="/admin/patterns/{{ pattern.id }}/delete" class="inline-form" onsubmit="return confirm('Dieses Muster wirklich löschen?');">
+                        <button type="submit" class="btn btn-sm btn-danger">Löschen</button>
                     </form>
                 </td>
             </tr>
@@ -82,19 +86,19 @@
         </tbody>
     </table>
     {% else %}
-    <p class="empty-state">No patterns defined. Add patterns using the form above.</p>
+    <p class="empty-state">Noch keine Muster definiert. Fügen Sie über das Formular oben ein Muster hinzu.</p>
     {% endif %}
 </div>
 
 <div class="section">
-    <h2>Context Words ({{ context_words|length }})</h2>
-    <p class="help-text">Context words help improve detection accuracy by providing surrounding context that indicates the entity type.</p>
+    <h2>Kontextwörter ({{ context_words|length }})</h2>
+    <p class="help-text">Kontextwörter verbessern die Erkennungsgenauigkeit, indem sie umgebenden Text liefern, der auf den Entitätstyp hindeutet.</p>
 
     <form method="POST" action="/admin/recognizers/{{ recognizer.id }}/context/create" class="form-inline">
         <div class="form-group flex-grow">
-            <input type="text" name="word" placeholder="Context word (e.g., 'patient', 'fall', 'akte')" required>
+            <input type="text" name="word" placeholder="Kontextwort (z. B. 'Patient', 'Fall', 'Akte')" required>
         </div>
-        <button type="submit" class="btn btn-primary btn-sm">Add Word</button>
+        <button type="submit" class="btn btn-primary btn-sm">Wort hinzufügen</button>
     </form>
 
     {% if context_words %}
@@ -109,28 +113,28 @@
         {% endfor %}
     </div>
     {% else %}
-    <p class="empty-state">No context words defined.</p>
+    <p class="empty-state">Noch keine Kontextwörter definiert.</p>
     {% endif %}
 </div>
 
 <div class="section">
-    <h2>Pattern Preview</h2>
-    <p class="help-text">Test your patterns against sample text.</p>
+    <h2>Muster-Vorschau</h2>
+    <p class="help-text">Testen Sie Ihre Muster an einem Beispieltext, bevor Sie die Erkennungsregel aktivieren.</p>
 
     <div class="preview-form">
         <div class="form-group">
-            <label for="preview-text">Test Text</label>
-            <textarea id="preview-text" rows="3" placeholder="Enter text to test patterns..."></textarea>
+            <label for="preview-text">Testtext</label>
+            <textarea id="preview-text" rows="3" placeholder="Text zum Testen der Muster eingeben..."></textarea>
         </div>
         <div class="form-group">
-            <label for="preview-pattern">Pattern (Regex)</label>
-            <input type="text" id="preview-pattern" placeholder="Enter regex pattern to test...">
+            <label for="preview-pattern">Muster (Regex)</label>
+            <input type="text" id="preview-pattern" placeholder="Regulären Ausdruck zum Testen eingeben...">
         </div>
-        <button type="button" id="preview-btn" class="btn btn-primary">Test Pattern</button>
+        <button type="button" id="preview-btn" class="btn btn-primary">Muster testen</button>
     </div>
 
     <div id="preview-results" class="preview-results" style="display: none;">
-        <h4>Matches</h4>
+        <h4>Treffer</h4>
         <div id="preview-matches"></div>
     </div>
 </div>

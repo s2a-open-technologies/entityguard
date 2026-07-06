@@ -4,38 +4,38 @@
 
 {% block content %}
 <div class="page-header">
-    <h1>Edit Entity: {{ entity.name }}</h1>
-    <a href="/admin/entities" class="btn btn-secondary">Back to List</a>
+    <h1>Entität bearbeiten: {{ entity.name }}</h1>
+    <a href="/admin/entities" class="btn btn-secondary">Zurück zur Liste</a>
 </div>
 
 <form method="POST" action="/admin/entities/{{ entity.id }}/edit" class="form">
     <div class="form-group">
-        <label for="name">Entity Name</label>
+        <label for="name">Name der Entität</label>
         <input type="text" id="name" name="name" value="{{ entity.name }}" required>
     </div>
 
     <div class="form-group">
-        <label for="placeholder">Placeholder</label>
+        <label for="placeholder">Platzhalter</label>
         <input type="text" id="placeholder" name="placeholder" value="{{ entity.placeholder }}" required>
-        <small>Text that replaces detected entities in output</small>
+        <small>Text, der erkannte Entitäten in der Ausgabe ersetzt</small>
     </div>
 
     <div class="form-group">
-        <label for="description">Description</label>
+        <label for="description">Beschreibung</label>
         <textarea id="description" name="description" rows="3">{{ entity.description or '' }}</textarea>
     </div>
 
     <div class="form-group">
         <label class="checkbox-label">
             <input type="checkbox" name="is_active" value="true" {% if entity.is_active %}checked{% endif %}>
-            Active
+            Aktiv
         </label>
-        <small>Only active entities are available for new recognizers</small>
+        <small>Nur aktive Entitäten stehen bei neuen Erkennungsregeln zur Auswahl</small>
     </div>
 
     <div class="form-actions">
-        <button type="submit" class="btn btn-primary">Save Changes</button>
-        <a href="/admin/entities" class="btn btn-secondary">Cancel</a>
+        <button type="submit" class="btn btn-primary">Änderungen speichern</button>
+        <a href="/admin/entities" class="btn btn-secondary">Abbrechen</a>
     </div>
 </form>
 {% endblock %}

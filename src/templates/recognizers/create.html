@@ -4,54 +4,59 @@
 
 {% block content %}
 <div class="page-header">
-    <h1>Create Recognizer</h1>
-    <a href="/admin/recognizers" class="btn btn-secondary">Back to List</a>
+    <h1>Erkennungsregel erstellen</h1>
+    <a href="/admin/recognizers" class="btn btn-secondary">Zurück zur Liste</a>
 </div>
+
+<p class="help-text">
+    Eine Erkennungsregel bündelt eine Entität mit den Mustern und Kontextwörtern, mit denen sie im Text gefunden
+    wird. Nach dem Anlegen können Sie auf der Detailseite Muster und Kontextwörter hinzufügen.
+</p>
 
 <form method="POST" action="/admin/recognizers/create" class="form">
     <div class="form-group">
         <label for="name">Name</label>
         <input type="text" id="name" name="name" value="{{ name | default('') }}" required>
-        <small>A unique name for this recognizer (e.g., "phone_numbers_de")</small>
+        <small>Ein eindeutiger Name für diese Erkennungsregel (z. B. "telefonnummern_de")</small>
     </div>
 
     <div class="form-group">
-        <label for="supported_entity">Supported Entity</label>
+        <label for="supported_entity">Zugeordnete Entität</label>
         {% if entities %}
         <select id="supported_entity" name="supported_entity" required>
-            <option value="">-- Select an entity --</option>
+            <option value="">-- Entität auswählen --</option>
             {% for entity in entities %}
             <option value="{{ entity.name }}" {% if supported_entity | default('') == entity.name %}selected{% endif %}>
                 {{ entity.name }} ({{ entity.placeholder }})
             </option>
             {% endfor %}
         </select>
-        <small>Select the entity type this recognizer detects. <a href="/admin/entities/create">Create new entity</a></small>
+        <small>Wählen Sie den Entitätstyp, den diese Erkennungsregel erkennt. <a href="/admin/entities/create">Neue Entität erstellen</a></small>
         {% else %}
         <input type="text" id="supported_entity" name="supported_entity" value="{{ supported_entity | default('') }}" required>
-        <small>No entities defined. <a href="/admin/entities/create">Create an entity first</a></small>
+        <small>Keine Entitäten definiert. <a href="/admin/entities/create">Zuerst eine Entität erstellen</a></small>
         {% endif %}
     </div>
 
     <div class="form-group">
-        <label for="supported_language">Language</label>
+        <label for="supported_language">Sprache</label>
         <select id="supported_language" name="supported_language">
-            <option value="de" {% if supported_language | default('de') == 'de' %}selected{% endif %}>German (de)</option>
-            <option value="en" {% if supported_language | default('de') == 'en' %}selected{% endif %}>English (en)</option>
+            <option value="de" {% if supported_language | default('de') == 'de' %}selected{% endif %}>Deutsch (de)</option>
+            <option value="en" {% if supported_language | default('de') == 'en' %}selected{% endif %}>Englisch (en)</option>
         </select>
     </div>
 
     <div class="form-group">
         <label class="checkbox-label">
             <input type="checkbox" name="is_active" value="true" {% if is_active is not defined or is_active %}checked{% endif %}>
-            Active
+            Aktiv
         </label>
-        <small>Only active recognizers are used in text processing</small>
+        <small>Nur aktive Erkennungsregeln werden bei der Textverarbeitung verwendet</small>
     </div>
 
     <div class="form-actions">
-        <button type="submit" class="btn btn-primary">Create Recognizer</button>
-        <a href="/admin/recognizers" class="btn btn-secondary">Cancel</a>
+        <button type="submit" class="btn btn-primary">Erkennungsregel erstellen</button>
+        <a href="/admin/recognizers" class="btn btn-secondary">Abbrechen</a>
     </div>
 </form>
 {% endblock %}
