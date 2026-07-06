@@ -26,7 +26,7 @@ from src.components import CustomAnalyzer
 from src.database import SessionLocal
 
 # Router Blueprint
-entityguard_router = APIRouter(prefix="/api/v1/entityguard", tags=["Anonymizer"])
+entityguard_router = APIRouter(prefix="/api/v1", tags=["Anonymizer"])
 
 # Logger
 logger = logging.getLogger("uvicorn.error")
