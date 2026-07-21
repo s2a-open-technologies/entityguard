@@ -41,6 +41,9 @@ class RecognizerModel(Base):
         supported_language: Language code (default: "de")
         is_active: Whether this recognizer is currently active
         is_builtin: Whether this is a built-in Presidio recognizer
+        min_score: Optional per-recognizer confidence floor (0.0-1.0).
+            NULL means the global default_score_threshold applies. Only
+            consumed by BertNerRecognizer so far.
         patterns: List of patterns associated with this recognizer
         context_words: List of context words for improved detection
         created_at: Timestamp of creation
@@ -54,6 +57,7 @@ class RecognizerModel(Base):
     supported_language: Mapped[str] = mapped_column(String(10), default="de")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     is_builtin: Mapped[bool] = mapped_column(Boolean, default=False)
+    min_score: Mapped[float | None] = mapped_column(Float, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -150,6 +154,31 @@ class EntityModel(Base):
 
     def __repr__(self) -> str:
         return f"<EntityModel(name='{self.name}', placeholder='{self.placeholder}')>"
+
+
+class AllowedValueModel(Base):
+    """
+    Model for an allow-listed value that is never masked.
+
+    Exact strings here are excluded from sanitization results regardless
+    of which recognizer (spaCy, BERT, or a custom pattern) flagged them -
+    e.g. a company name that gets falsely detected as a PERSON/ORGANIZATION.
+
+    Attributes:
+        id: Primary key
+        value: The exact string to never mask
+        description: Optional note on why this value is allow-listed
+        created_at: Timestamp of creation
+    """
+    __tablename__ = "allowed_values"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    value: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    def __repr__(self) -> str:
+        return f"<AllowedValueModel(value='{self.value}')>"
 
 
 class AdminUser(Base):

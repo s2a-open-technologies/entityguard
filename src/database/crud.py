@@ -22,7 +22,7 @@ from typing import Optional
 import bcrypt
 from sqlalchemy.orm import Session
 
-from .models import AdminUser, ContextWordModel, EntityModel, PatternModel, RecognizerModel
+from .models import AdminUser, AllowedValueModel, ContextWordModel, EntityModel, PatternModel, RecognizerModel
 
 
 def get_recognizer(db: Session, recognizer_id: int) -> Optional[RecognizerModel]:
@@ -48,14 +48,16 @@ def create_recognizer(
     name: str,
     supported_entity: str,
     supported_language: str = "de",
-    is_active: bool = True
+    is_active: bool = True,
+    min_score: Optional[float] = None
 ) -> RecognizerModel:
     """Create a new recognizer."""
     recognizer = RecognizerModel(
         name=name,
         supported_entity=supported_entity,
         supported_language=supported_language,
-        is_active=is_active
+        is_active=is_active,
+        min_score=min_score
     )
     db.add(recognizer)
     db.commit()
@@ -69,7 +71,9 @@ def update_recognizer(
     name: Optional[str] = None,
     supported_entity: Optional[str] = None,
     supported_language: Optional[str] = None,
-    is_active: Optional[bool] = None
+    is_active: Optional[bool] = None,
+    min_score: Optional[float] = None,
+    clear_min_score: bool = False
 ) -> Optional[RecognizerModel]:
     """Update a recognizer."""
     recognizer = get_recognizer(db, recognizer_id)
@@ -84,6 +88,10 @@ def update_recognizer(
         recognizer.supported_language = supported_language
     if is_active is not None:
         recognizer.is_active = is_active
+    if clear_min_score:
+        recognizer.min_score = None
+    elif min_score is not None:
+        recognizer.min_score = min_score
 
     recognizer.updated_at = datetime.utcnow()
     db.commit()
@@ -342,5 +350,48 @@ def delete_entity(db: Session, entity_id: int) -> bool:
         return False
 
     db.delete(entity)
+    db.commit()
+    return True
+
+
+# ============================================================================
+# Allow-List CRUD
+# ============================================================================
+
+def get_allowed_value(db: Session, allowed_value_id: int) -> Optional[AllowedValueModel]:
+    """Get an allow-listed value by ID."""
+    return db.query(AllowedValueModel).filter(AllowedValueModel.id == allowed_value_id).first()
+
+
+def get_allowed_values(db: Session) -> list[AllowedValueModel]:
+    """Get all allow-listed values."""
+    return db.query(AllowedValueModel).all()
+
+
+def get_allowed_value_by_value(db: Session, value: str) -> Optional[AllowedValueModel]:
+    """Get an allow-listed value by its exact string."""
+    return db.query(AllowedValueModel).filter(AllowedValueModel.value == value).first()
+
+
+def create_allowed_value(
+    db: Session,
+    value: str,
+    description: Optional[str] = None
+) -> AllowedValueModel:
+    """Create a new allow-listed value."""
+    allowed_value = AllowedValueModel(value=value, description=description)
+    db.add(allowed_value)
+    db.commit()
+    db.refresh(allowed_value)
+    return allowed_value
+
+
+def delete_allowed_value(db: Session, allowed_value_id: int) -> bool:
+    """Delete an allow-listed value."""
+    allowed_value = get_allowed_value(db, allowed_value_id)
+    if not allowed_value:
+        return False
+
+    db.delete(allowed_value)
     db.commit()
     return True

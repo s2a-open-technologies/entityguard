@@ -26,7 +26,7 @@ from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from src.admin import admin_router, get_current_user
-from src.views import entityguard_router
+from src.views import entityguard_router, public_router
 
 # Logger
 logger = logging.getLogger("uvicorn.error")
@@ -72,6 +72,7 @@ def create_app():
     # Include routers
     app.include_router(entityguard_router)
     app.include_router(admin_router)
+    app.include_router(public_router)
 
     @app.get("/health")
     async def health():

@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+
+{% block title %}Text anonymisieren{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>EntityGuard – Text anonymisieren</h1>
+</div>
+
+<div class="section">
+    <div class="preview-form">
+        <div class="form-group">
+            <label for="input-text">Text eingeben</label>
+            <textarea id="input-text" rows="8" placeholder="Text hier einfügen..."></textarea>
+        </div>
+        <button type="button" id="sanitize-btn" class="btn btn-primary">Anonymisieren</button>
+    </div>
+
+    <div id="sanitize-error" class="alert alert-error" style="display: none;"></div>
+
+    <div id="sanitize-results" class="preview-results" style="display: none;">
+        <h4>Anonymisierter Text</h4>
+        <textarea id="output-text" rows="8" readonly></textarea>
+
+        <h4>Zuordnung (Platzhalter → Originalwert)</h4>
+        <table class="data-table" id="mapping-table">
+            <thead>
+                <tr>
+                    <th>Platzhalter</th>
+                    <th>Originalwert</th>
+                </tr>
+            </thead>
+            <tbody id="mapping-body"></tbody>
+        </table>
+        <p id="mapping-empty" class="empty-state" style="display: none;">Keine Entitäten erkannt.</p>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const btn = document.getElementById('sanitize-btn');
+    const inputText = document.getElementById('input-text');
+    const outputText = document.getElementById('output-text');
+    const results = document.getElementById('sanitize-results');
+    const errorBox = document.getElementById('sanitize-error');
+    const mappingBody = document.getElementById('mapping-body');
+    const mappingEmpty = document.getElementById('mapping-empty');
+
+    btn.addEventListener('click', async function() {
+        const text = inputText.value;
+        if (!text.trim()) {
+            alert('Bitte Text eingeben');
+            return;
+        }
+
+        errorBox.style.display = 'none';
+        results.style.display = 'none';
+
+        try {
+            const response = await fetch('/api/v1/sanitize', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ text: text })
+            });
+
+            if (!response.ok) {
+                throw new Error('Server antwortete mit Status ' + response.status);
+            }
+
+            const data = await response.json();
+            outputText.value = data.sanitized_text;
+
+            const entries = Object.entries(data.mapping || {});
+            mappingBody.innerHTML = '';
+            if (entries.length === 0) {
+                mappingEmpty.style.display = 'block';
+            } else {
+                mappingEmpty.style.display = 'none';
+                entries.forEach(function([placeholder, original]) {
+                    const row = document.createElement('tr');
+                    row.innerHTML = '<td><code>' + escapeHtml(placeholder) + '</code></td><td>' + escapeHtml(original) + '</td>';
+                    mappingBody.appendChild(row);
+                });
+            }
+
+            results.style.display = 'block';
+        } catch (error) {
+            errorBox.textContent = 'Fehler: ' + error.message;
+            errorBox.style.display = 'block';
+        }
+    });
+});
+</script>
+{% endblock %}

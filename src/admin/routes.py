@@ -26,10 +26,11 @@ from fastapi.templating import Jinja2Templates
 
 from src.database import SessionLocal
 from src.database.crud import (
-    create_context_word, create_entity, create_pattern, create_recognizer, delete_context_word,
-    delete_entity, delete_pattern, delete_recognizer, get_admin_user, get_entities, get_entity,
-    get_entity_by_name, get_pattern, get_pattern_by_name, get_recognizer, get_recognizer_by_name,
-    get_recognizers, get_context_word, get_context_words_by_recognizer, get_patterns_by_recognizer,
+    create_allowed_value, create_context_word, create_entity, create_pattern, create_recognizer,
+    delete_allowed_value, delete_context_word, delete_entity, delete_pattern, delete_recognizer,
+    get_admin_user, get_allowed_values, get_allowed_value_by_value, get_entities, get_entity, get_entity_by_name, get_pattern,
+    get_pattern_by_name, get_recognizer, get_recognizer_by_name, get_recognizers, get_context_word,
+    get_context_words_by_recognizer, get_patterns_by_recognizer,
     update_admin_password, update_entity, update_pattern, update_recognizer, verify_password,
 )
 
@@ -160,6 +161,7 @@ async def create_recognizer_submit(
     supported_entity: Annotated[str, Form()],
     supported_language: Annotated[str, Form()] = "de",
     is_active: Annotated[bool, Form()] = True,
+    min_score: Annotated[str, Form()] = "",
     user: dict = Depends(require_auth)
 ):
     """Create a new recognizer."""
@@ -175,7 +177,23 @@ async def create_recognizer_submit(
                 error=f"Eine Erkennungsregel mit dem Namen '{name}' existiert bereits",
                 name=name,
                 supported_entity=supported_entity,
-                supported_language=supported_language
+                supported_language=supported_language,
+                min_score=min_score
+            )
+            return templates.TemplateResponse("recognizers/create.html", context, status_code=400)
+
+        try:
+            min_score_value = float(min_score) if min_score.strip() else None
+        except ValueError:
+            entities = get_entities(db, active_only=True)
+            context = get_template_context(
+                request,
+                entities=entities,
+                error="Mindest-Score muss eine Zahl zwischen 0 und 1 sein",
+                name=name,
+                supported_entity=supported_entity,
+                supported_language=supported_language,
+                min_score=min_score
             )
             return templates.TemplateResponse("recognizers/create.html", context, status_code=400)
 
@@ -184,7 +202,8 @@ async def create_recognizer_submit(
             name=name,
             supported_entity=supported_entity,
             supported_language=supported_language,
-            is_active=is_active
+            is_active=is_active,
+            min_score=min_score_value
         )
         return RedirectResponse(url=f"/admin/recognizers/{recognizer.id}", status_code=303)
     finally:
@@ -246,6 +265,7 @@ async def edit_recognizer_submit(
     supported_entity: Annotated[str, Form()],
     supported_language: Annotated[str, Form()] = "de",
     is_active: Annotated[bool, Form()] = False,
+    min_score: Annotated[str, Form()] = "",
     user: dict = Depends(require_auth)
 ):
     """Update a recognizer."""
@@ -267,13 +287,27 @@ async def edit_recognizer_submit(
             )
             return templates.TemplateResponse("recognizers/edit.html", context, status_code=400)
 
+        try:
+            min_score_value = float(min_score) if min_score.strip() else None
+        except ValueError:
+            entities = get_entities(db, active_only=True)
+            context = get_template_context(
+                request,
+                recognizer=recognizer,
+                entities=entities,
+                error="Mindest-Score muss eine Zahl zwischen 0 und 1 sein"
+            )
+            return templates.TemplateResponse("recognizers/edit.html", context, status_code=400)
+
         update_recognizer(
             db,
             recognizer_id,
             name=name,
             supported_entity=supported_entity,
             supported_language=supported_language,
-            is_active=is_active
+            is_active=is_active,
+            min_score=min_score_value,
+            clear_min_score=min_score_value is None
         )
         return RedirectResponse(url=f"/admin/recognizers/{recognizer_id}", status_code=303)
     finally:
@@ -545,6 +579,63 @@ async def preview_pattern(
 # ============================================================================
 
 
+
+
+# ============================================================================
+# Allow-List
+# ============================================================================
+
+@admin_router.get("/allowlist", response_class=HTMLResponse)
+async def list_allowed_values(request: Request, user: dict = Depends(require_auth)):
+    """Render the allow-list."""
+    db = SessionLocal()
+    try:
+        allowed_values = get_allowed_values(db)
+        context = get_template_context(request, allowed_values=allowed_values)
+        return templates.TemplateResponse("allowlist/list.html", context)
+    finally:
+        db.close()
+
+
+@admin_router.post("/allowlist/create")
+async def create_allowed_value_submit(
+    request: Request,
+    value: Annotated[str, Form()],
+    description: Annotated[str, Form()] = "",
+    user: dict = Depends(require_auth)
+):
+    """Add a new allow-listed value."""
+    db = SessionLocal()
+    try:
+        existing = get_allowed_value_by_value(db, value)
+        if existing:
+            allowed_values = get_allowed_values(db)
+            context = get_template_context(
+                request,
+                allowed_values=allowed_values,
+                error=f"'{value}' ist bereits in der Ausnahmeliste"
+            )
+            return templates.TemplateResponse("allowlist/list.html", context, status_code=400)
+
+        create_allowed_value(db, value=value, description=description if description else None)
+        return RedirectResponse(url="/admin/allowlist", status_code=303)
+    finally:
+        db.close()
+
+
+@admin_router.post("/allowlist/{allowed_value_id}/delete")
+async def delete_allowed_value_submit(
+    request: Request,
+    allowed_value_id: int,
+    user: dict = Depends(require_auth)
+):
+    """Delete an allow-listed value."""
+    db = SessionLocal()
+    try:
+        delete_allowed_value(db, allowed_value_id)
+        return RedirectResponse(url="/admin/allowlist", status_code=303)
+    finally:
+        db.close()
 
 
 # ============================================================================

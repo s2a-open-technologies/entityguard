@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+
+{% block title %}Ausnahmeliste{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Ausnahmeliste</h1>
+</div>
+
+<div class="section">
+    <p class="help-text">
+        Begriffe in dieser Liste werden nie maskiert, egal welcher Recognizer (spaCy, BERT-NER oder ein
+        benutzerdefiniertes Muster) sie erkennt — exakter Text-Abgleich, z. B. für Firmennamen, die fälschlich
+        als Person oder Organisation erkannt werden.
+    </p>
+
+    <form method="POST" action="/admin/allowlist/create" class="form-inline">
+        <div class="form-group flex-grow">
+            <input type="text" name="value" placeholder="Begriff (z. B. 'MedTech GmbH')" required>
+        </div>
+        <div class="form-group flex-grow">
+            <input type="text" name="description" placeholder="Notiz, optional (z. B. 'wird fälschlich als PERSON erkannt')">
+        </div>
+        <button type="submit" class="btn btn-primary btn-sm">Hinzufügen</button>
+    </form>
+
+    {% if allowed_values %}
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Begriff</th>
+                <th>Notiz</th>
+                <th>Aktionen</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for entry in allowed_values %}
+            <tr>
+                <td><code>{{ entry.value }}</code></td>
+                <td>{{ entry.description or '' }}</td>
+                <td class="actions">
+                    <form method="POST" action="/admin/allowlist/{{ entry.id }}/delete" class="inline-form" onsubmit="return confirm('Diesen Eintrag wirklich löschen?');">
+                        <button type="submit" class="btn btn-sm btn-danger">Löschen</button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p class="empty-state">Noch keine Ausnahmen definiert.</p>
+    {% endif %}
+</div>
+{% endblock %}
