@@ -28,10 +28,11 @@ COPY alembic.ini ./
 COPY alembic/ ./alembic/
 
 # Anwendungscode kopieren
-COPY src/ ./src/
+COPY backend/ ./backend/
+COPY frontend/ ./frontend/
 COPY main.py ./
 
-# Alembic-Migrationen anwenden (benötigt src-Modul)
+# Alembic-Migrationen anwenden (benötigt backend-Modul)
 RUN mkdir -p /app/data && \
     uv run alembic upgrade head
 

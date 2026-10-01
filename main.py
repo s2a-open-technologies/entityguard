@@ -25,8 +25,8 @@ from fastapi import FastAPI, Request
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
-from src.admin import admin_router, get_current_user
-from src.views import entityguard_router, public_router
+from backend.admin import admin_router, get_current_user
+from backend.views import entityguard_router, public_router
 
 # Logger
 logger = logging.getLogger("uvicorn.error")
@@ -60,12 +60,12 @@ def create_app():
     app = FastAPI(
         title="EntityGuard",
         description="Security layer for processing patient data according to GDPR & HIPAA",
-        version="1.0.0",
+        version="0.2.0",
         lifespan=lifespan
     )
 
     # Mount static files
-    static_dir = Path(__file__).parent / "src" / "static"
+    static_dir = Path(__file__).parent / "frontend" / "static"
     static_dir.mkdir(exist_ok=True)
     app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 

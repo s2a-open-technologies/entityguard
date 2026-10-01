@@ -24,8 +24,8 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
-from src.database import SessionLocal
-from src.database.crud import (
+from backend.database import SessionLocal
+from backend.database.crud import (
     create_allowed_value, create_context_word, create_entity, create_pattern, create_recognizer,
     delete_allowed_value, delete_context_word, delete_entity, delete_pattern, delete_recognizer,
     get_admin_user, get_allowed_values, get_allowed_value_by_value, get_entities, get_entity, get_entity_by_name, get_pattern,
@@ -41,7 +41,7 @@ from .dependencies import get_template_context
 admin_router = APIRouter(prefix="/admin", tags=["Admin"])
 
 # Templates
-TEMPLATES_DIR = Path(__file__).parent.parent / "templates"
+TEMPLATES_DIR = Path(__file__).resolve().parents[2] / "frontend" / "templates"
 templates = Jinja2Templates(directory=TEMPLATES_DIR)
 
 

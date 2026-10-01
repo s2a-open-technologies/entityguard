@@ -32,7 +32,7 @@ def upgrade():
     Exact-match strings that are always excluded from masking, regardless
     of which recognizer flagged them (spaCy, BERT, or a custom pattern) -
     wired via Presidio's AnalyzerEngine.analyze(allow_list=...) in
-    src/components/cstm_analyzer.py.
+    backend/components/cstm_analyzer.py.
     """
     op.create_table(
         'allowed_values',

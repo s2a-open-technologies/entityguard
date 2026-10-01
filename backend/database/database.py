@@ -24,10 +24,10 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
 # Database path. Resolved relative to the project root (three levels up
-# from this file: src/database/database.py -> src/database -> src -> root),
-# matching alembic.ini's `sqlite:///data/entityguard.db` and the
-# docker-compose volume mount, so the app and Alembic always operate on the
-# same SQLite file.
+# from this file: backend/database/database.py -> backend/database ->
+# backend -> root), matching alembic.ini's `sqlite:///data/entityguard.db`
+# and the docker-compose volume mount, so the app and Alembic always
+# operate on the same SQLite file.
 DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data"
 DATA_DIR.mkdir(exist_ok=True)
 DATABASE_URL = f"sqlite:///{DATA_DIR / 'entityguard.db'}"

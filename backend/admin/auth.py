@@ -24,8 +24,8 @@ from typing import Optional
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.responses import RedirectResponse
 
-from src.database import SessionLocal
-from src.database.crud import authenticate_admin_user, get_admin_user
+from backend.database import SessionLocal
+from backend.database.crud import authenticate_admin_user, get_admin_user
 
 
 # In-memory session store (sufficient for single user)

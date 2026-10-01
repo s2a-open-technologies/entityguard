@@ -22,8 +22,8 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from src.components import CustomAnalyzer
-from src.database import SessionLocal
+from backend.components import CustomAnalyzer
+from backend.database import SessionLocal
 
 # Router Blueprint
 entityguard_router = APIRouter(prefix="/api/v1", tags=["Anonymizer"])

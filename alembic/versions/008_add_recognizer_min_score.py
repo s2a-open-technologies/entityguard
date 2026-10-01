@@ -30,7 +30,7 @@ def upgrade():
     """Add a nullable min_score column to recognizers.
 
     NULL means "use the global default_score_threshold". Currently only
-    read by BertNerRecognizer (src/components/bert_recognizer.py) as a
+    read by BertNerRecognizer (backend/components/bert_recognizer.py) as a
     per-recognizer confidence floor; not yet consumed by DB-driven
     PatternRecognizers, which already have a per-pattern score instead.
     """

@@ -34,7 +34,7 @@ def upgrade():
     NER model is registered as a single recognizer object that detects
     PERSON/LOCATION/ORGANIZATION together, so a single row represents it.
     Its `is_active` flag is read directly by CustomAnalyzer
-    (src/components/cstm_analyzer.py) to decide whether to load and
+    (backend/components/cstm_analyzer.py) to decide whether to load and
     register the transformer model - toggling it in the admin UI's
     recognizer edit form enables/disables BERT NER without a restart
     (picked up on the next /reload).
