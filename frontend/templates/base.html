@@ -23,6 +23,15 @@
                     </svg>
                     Dashboard
                 </a>
+                <a href="/sanitize" class="nav-item {% if request.url.path == '/sanitize' %}active{% endif %}">
+                    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M12 3a8 8 0 0 0-8 8c0 4.4 3.6 8 8 8h4a2 2 0 0 0 2-2v-4a8 8 0 0 0-8-10z"/>
+                        <path d="M12 8v5"/>
+                        <circle cx="12" cy="6.5" r="0.5" fill="currentColor"/>
+                        <path d="M16 12l3 3-3 3"/>
+                    </svg>
+                    Text anonymisieren
+                </a>
                 <a href="/admin/entities" class="nav-item {% if '/admin/entities' in request.url.path %}active{% endif %}">
                     <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <path d="M7 7h.01M7 3h5c1.133 0 2.2.534 2.868 1.434l4 6c1.072 1.607.844 3.73-.548 5.123l-2.863 2.863c-1.393 1.392-3.516 1.62-5.123.548l-6-4C3.534 14.2 3 13.133 3 12V7a4 4 0 0 1 4-4z"/>

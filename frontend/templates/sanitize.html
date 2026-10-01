@@ -3,58 +3,206 @@
 {% block title %}Text anonymisieren{% endblock %}
 
 {% block content %}
-<div class="page-header">
-    <h1>EntityGuard – Text anonymisieren</h1>
-</div>
-
-<div class="section">
-    <div class="preview-form">
-        <div class="form-group">
-            <label for="input-text">Text eingeben</label>
-            <textarea id="input-text" rows="8" placeholder="Text hier einfügen..."></textarea>
-        </div>
-        <button type="button" id="sanitize-btn" class="btn btn-primary">Anonymisieren</button>
+<div class="sanitize-wrap">
+    <div class="page-header">
+        <h1>Text anonymisieren</h1>
     </div>
 
-    <div id="sanitize-error" class="alert alert-error" style="display: none;"></div>
+    <p class="help-text">
+        Links Text schreiben oder eine .txt/.md-Datei laden &ndash; rechts erscheint live die anonymisierte Version.
+        Fahre mit der Maus über einen Platzhalter, um den Originalwert zu sehen.
+    </p>
 
-    <div id="sanitize-results" class="preview-results" style="display: none;">
-        <h4>Anonymisierter Text</h4>
-        <textarea id="output-text" rows="8" readonly></textarea>
+    <div class="sanitize-grid">
+        <section class="sanitize-panel" id="input-panel">
+            <div class="sanitize-panel-header">
+                <h2 class="sanitize-panel-title">Original</h2>
+                <div class="sanitize-panel-actions">
+                    <button type="button" id="load-file-btn" class="btn btn-secondary btn-sm">Datei laden</button>
+                    <input type="file" id="file-input" accept=".txt,.md,text/plain,text/markdown" hidden>
+                    <button type="button" id="clear-btn" class="btn btn-secondary btn-sm">Leeren</button>
+                </div>
+            </div>
+            <textarea id="input-text" class="sanitize-input" spellcheck="false"
+                      placeholder="Text hier eingeben oder eine Datei hineinziehen ..."></textarea>
+            <div id="file-error" class="sanitize-hint sanitize-hint-error" style="display: none;"></div>
+            <div class="drop-overlay" id="drop-overlay">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                    <polyline points="7 10 12 15 17 10"/>
+                    <line x1="12" y1="15" x2="12" y2="3"/>
+                </svg>
+                <span>Datei hier ablegen</span>
+            </div>
+        </section>
 
-        <h4>Zuordnung (Platzhalter → Originalwert)</h4>
-        <table class="data-table" id="mapping-table">
-            <thead>
-                <tr>
-                    <th>Platzhalter</th>
-                    <th>Originalwert</th>
-                </tr>
-            </thead>
-            <tbody id="mapping-body"></tbody>
-        </table>
-        <p id="mapping-empty" class="empty-state" style="display: none;">Keine Entitäten erkannt.</p>
+        <section class="sanitize-panel">
+            <div class="sanitize-panel-header">
+                <h2 class="sanitize-panel-title">Anonymisiert</h2>
+                <div class="sanitize-panel-actions">
+                    <span id="status" class="sanitize-status" style="display: none;"></span>
+                    <button type="button" id="copy-btn" class="btn btn-secondary btn-sm" style="display: none;">Kopieren</button>
+                </div>
+            </div>
+            <div id="output-text" class="sanitize-output"></div>
+            <div id="type-chips" class="tags" style="display: none;"></div>
+            <p class="sanitize-hint">Erkannte Stellen sind farblich markiert &ndash; Originalwert per Maus-Hover anzeigen.</p>
+        </section>
     </div>
 </div>
 
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-    const btn = document.getElementById('sanitize-btn');
+    const inputPanel = document.getElementById('input-panel');
+    const fileInput = document.getElementById('file-input');
+    const loadFileBtn = document.getElementById('load-file-btn');
+    const clearBtn = document.getElementById('clear-btn');
     const inputText = document.getElementById('input-text');
+    const fileError = document.getElementById('file-error');
     const outputText = document.getElementById('output-text');
-    const results = document.getElementById('sanitize-results');
-    const errorBox = document.getElementById('sanitize-error');
-    const mappingBody = document.getElementById('mapping-body');
-    const mappingEmpty = document.getElementById('mapping-empty');
+    const statusEl = document.getElementById('status');
+    const copyBtn = document.getElementById('copy-btn');
+    const typeChips = document.getElementById('type-chips');
+    const dropOverlay = document.getElementById('drop-overlay');
 
-    btn.addEventListener('click', async function() {
+    const DEBOUNCE_MS = 600;
+    let debounceTimer = null;
+    let requestSeq = 0;
+    let lastSanitized = '';
+    let dragDepth = 0;
+
+    function isAllowedFile(file) {
+        return /\.(txt|md)$/.test(file.name.toLowerCase());
+    }
+
+    function showFileError(message) {
+        fileError.textContent = message;
+        fileError.style.display = 'block';
+    }
+
+    function clearFileError() {
+        fileError.style.display = 'none';
+    }
+
+    function loadFile(file) {
+        if (!file) return;
+        if (!isAllowedFile(file)) {
+            showFileError('Nur .txt- und .md-Dateien werden unterstützt.');
+            return;
+        }
+        clearFileError();
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            inputText.value = e.target.result;
+            inputText.dispatchEvent(new Event('input'));
+        };
+        reader.onerror = function() {
+            showFileError('Datei konnte nicht gelesen werden.');
+        };
+        reader.readAsText(file);
+    }
+
+    function setOutputEmpty() {
+        outputText.classList.add('is-empty');
+        outputText.textContent = 'Der anonymisierte Text erscheint hier ...';
+    }
+
+    function showStatus(text, isError, withSpinner) {
+        statusEl.style.display = 'inline-flex';
+        statusEl.classList.toggle('error', !!isError);
+        statusEl.replaceChildren();
+        if (withSpinner) {
+            const spinner = document.createElement('span');
+            spinner.className = 'spinner';
+            statusEl.appendChild(spinner);
+        }
+        statusEl.appendChild(document.createTextNode(text));
+    }
+
+    function hideStatus() {
+        statusEl.style.display = 'none';
+    }
+
+    function typeOfKey(key) {
+        let t = key;
+        if (t.startsWith('[')) t = t.slice(1);
+        if (t.endsWith(']')) t = t.slice(0, -1);
+        t = t.replace(/_\d+$/, '');
+        return t || key;
+    }
+
+    function renderOutput(sanitized, mapping) {
+        outputText.classList.remove('is-empty');
+        outputText.replaceChildren();
+
+        const keys = Object.keys(mapping).sort((a, b) => b.length - a.length);
+        const frag = document.createDocumentFragment();
+        let rest = sanitized;
+
+        while (rest.length > 0) {
+            let idx = -1;
+            let key = null;
+            for (const k of keys) {
+                const i = rest.indexOf(k);
+                if (i !== -1 && (idx === -1 || i < idx)) {
+                    idx = i;
+                    key = k;
+                }
+            }
+            if (idx === -1) {
+                frag.appendChild(document.createTextNode(rest));
+                break;
+            }
+            if (idx > 0) {
+                frag.appendChild(document.createTextNode(rest.slice(0, idx)));
+            }
+            const span = document.createElement('span');
+            span.className = 'ph';
+            span.tabIndex = 0;
+            span.textContent = key;
+            span.dataset.original = mapping[key];
+            frag.appendChild(span);
+            rest = rest.slice(idx + key.length);
+        }
+
+        outputText.appendChild(frag);
+    }
+
+    function renderChips(mapping) {
+        typeChips.replaceChildren();
+        const keys = Object.keys(mapping);
+        if (keys.length === 0) {
+            typeChips.style.display = 'none';
+            return;
+        }
+        const counts = {};
+        for (const key of keys) {
+            const type = typeOfKey(key);
+            counts[type] = (counts[type] || 0) + 1;
+        }
+        for (const [type, count] of Object.entries(counts)) {
+            const chip = document.createElement('span');
+            chip.className = 'tag';
+            chip.textContent = type + ' \u00d7 ' + count;
+            typeChips.appendChild(chip);
+        }
+        typeChips.style.display = 'flex';
+    }
+
+    async function doSanitize() {
         const text = inputText.value;
         if (!text.trim()) {
-            alert('Bitte Text eingeben');
+            requestSeq++;
+            lastSanitized = '';
+            setOutputEmpty();
+            typeChips.style.display = 'none';
+            copyBtn.style.display = 'none';
+            hideStatus();
             return;
         }
 
-        errorBox.style.display = 'none';
-        results.style.display = 'none';
+        const seq = ++requestSeq;
+        showStatus('Analysiert ...', false, true);
 
         try {
             const response = await fetch('/api/v1/sanitize', {
@@ -62,33 +210,89 @@ document.addEventListener('DOMContentLoaded', function() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ text: text })
             });
-
             if (!response.ok) {
                 throw new Error('Server antwortete mit Status ' + response.status);
             }
-
             const data = await response.json();
-            outputText.value = data.sanitized_text;
+            if (seq !== requestSeq) return;
 
-            const entries = Object.entries(data.mapping || {});
-            mappingBody.innerHTML = '';
-            if (entries.length === 0) {
-                mappingEmpty.style.display = 'block';
+            lastSanitized = data.sanitized_text || '';
+            renderOutput(lastSanitized, data.mapping || {});
+            renderChips(data.mapping || {});
+            copyBtn.style.display = 'inline-flex';
+
+            const count = Object.keys(data.mapping || {}).length;
+            if (count === 0) {
+                showStatus('Keine sensiblen Daten erkannt', false, false);
             } else {
-                mappingEmpty.style.display = 'none';
-                entries.forEach(function([placeholder, original]) {
-                    const row = document.createElement('tr');
-                    row.innerHTML = '<td><code>' + escapeHtml(placeholder) + '</code></td><td>' + escapeHtml(original) + '</td>';
-                    mappingBody.appendChild(row);
-                });
+                showStatus(count + (count === 1 ? ' Stelle anonymisiert' : ' Stellen anonymisiert'), false, false);
             }
-
-            results.style.display = 'block';
         } catch (error) {
-            errorBox.textContent = 'Fehler: ' + error.message;
-            errorBox.style.display = 'block';
+            if (seq !== requestSeq) return;
+            showStatus('Fehler: ' + error.message, true, false);
         }
+    }
+
+    loadFileBtn.addEventListener('click', function() {
+        fileInput.click();
     });
+
+    fileInput.addEventListener('change', function() {
+        loadFile(fileInput.files[0]);
+        fileInput.value = '';
+    });
+
+    clearBtn.addEventListener('click', function() {
+        inputText.value = '';
+        inputText.dispatchEvent(new Event('input'));
+        inputText.focus();
+    });
+
+    inputText.addEventListener('input', function() {
+        clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(doSanitize, DEBOUNCE_MS);
+    });
+
+    ['dragenter', 'dragover'].forEach(function(type) {
+        inputPanel.addEventListener(type, function(e) {
+            e.preventDefault();
+            if (type === 'dragenter') dragDepth++;
+            dropOverlay.classList.add('visible');
+        });
+    });
+
+    inputPanel.addEventListener('dragleave', function(e) {
+        e.preventDefault();
+        dragDepth = Math.max(0, dragDepth - 1);
+        if (dragDepth === 0) dropOverlay.classList.remove('visible');
+    });
+
+    inputPanel.addEventListener('drop', function(e) {
+        e.preventDefault();
+        dragDepth = 0;
+        dropOverlay.classList.remove('visible');
+        loadFile(e.dataTransfer.files[0]);
+    });
+
+    copyBtn.addEventListener('click', async function() {
+        if (!lastSanitized) return;
+        try {
+            await navigator.clipboard.writeText(lastSanitized);
+        } catch (err) {
+            const ta = document.createElement('textarea');
+            ta.value = lastSanitized;
+            document.body.appendChild(ta);
+            ta.select();
+            document.execCommand('copy');
+            document.body.removeChild(ta);
+        }
+        copyBtn.textContent = 'Kopiert!';
+        setTimeout(function() {
+            copyBtn.textContent = 'Kopieren';
+        }, 1500);
+    });
+
+    setOutputEmpty();
 });
 </script>
 {% endblock %}

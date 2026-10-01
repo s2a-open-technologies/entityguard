@@ -22,15 +22,19 @@ from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
+from backend.admin.dependencies import get_template_context
+
 # Router. No auth dependency anywhere on this router or its routes - this
 # page is intentionally public, mirroring /api/v1/sanitize which it calls.
+# The template context still includes the current user (if logged in) so
+# that admins keep the sidebar navigation when opening this page.
 public_router = APIRouter()
 
-TEMPLATES_DIR = Path(__file__).parent.parent / "templates"
+TEMPLATES_DIR = Path(__file__).resolve().parents[2] / "frontend" / "templates"
 templates = Jinja2Templates(directory=TEMPLATES_DIR)
 
 
 @public_router.get("/sanitize", response_class=HTMLResponse)
 async def sanitize_page(request: Request):
     """Render the public, login-free text sanitization page."""
-    return templates.TemplateResponse("sanitize.html", {"request": request})
+    return templates.TemplateResponse("sanitize.html", get_template_context(request))
