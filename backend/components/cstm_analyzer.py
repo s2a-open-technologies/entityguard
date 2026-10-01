@@ -24,9 +24,9 @@ from presidio_analyzer import AnalyzerEngine, Pattern, PatternRecognizer
 from presidio_analyzer.nlp_engine import NlpEngineProvider
 from sqlalchemy.orm import Session
 
-from src.components.bert_recognizer import BertNerRecognizer
-from src.database.crud import get_allowed_values, get_entities, get_recognizer_by_name, get_recognizers
-from src.database.models import RecognizerModel
+from backend.components.bert_recognizer import BertNerRecognizer
+from backend.database.crud import get_allowed_values, get_entities, get_recognizer_by_name, get_recognizers
+from backend.database.models import RecognizerModel
 
 # Name of the seeded DB row (alembic/versions/007_seed_bert_ner_recognizer.py)
 # that controls whether the BERT NER recognizer is registered.

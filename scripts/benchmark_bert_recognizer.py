@@ -18,8 +18,19 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 Benchmark CustomAnalyzer.process_text() latency with the BERT NER
 recognizer (native PyTorch, GPU if available) disabled vs enabled. Run with:
 
-    BERT_NER_MODEL=xlm-roberta-large-finetuned-conll03-german \
-        uv run python scripts/benchmark_bert_recognizer.py
+    uv run python scripts/benchmark_bert_recognizer.py
+
+Environment variables (all optional):
+    BERT_NER_MODEL    HuggingFace model name. Default since the CPU-benchmark
+                      switch: fhswf/bert_de_ner (~110M params, ~440 MB,
+                      ~89ms/call on 4 CPU cores). The previously used
+                      xlm-roberta-large-finetuned-conll03-german (~550M,
+                      ~2.2 GB) is still selectable but needs a GPU for
+                      interactive latency.
+    BERT_NER_DEVICE   Force a device, e.g. "cpu" or "cuda". Default: auto
+                      (cuda if available, else cpu). Measure the CPU case
+                      explicitly with BERT_NER_DEVICE=cpu - this matches the
+                      typical Docker deployment, which has no GPU.
 """
 
 import os
@@ -48,7 +59,7 @@ def _run(label: str, bert_enabled: bool) -> None:
     # _get_bert_recognizer() re-reads this env var on every CustomAnalyzer
     # init, so toggling it between calls in the same process works as
     # expected (the model is only ever loaded once, on first enabled call).
-    from src.components.cstm_analyzer import CustomAnalyzer
+    from backend.components.cstm_analyzer import CustomAnalyzer
 
     load_start = time.perf_counter()
     analyzer = CustomAnalyzer(language="de", db=None)
@@ -71,4 +82,4 @@ def _run(label: str, bert_enabled: bool) -> None:
 
 if __name__ == "__main__":
     _run("baseline (spaCy + DB recognizers only)", bert_enabled=False)
-    _run("with BertNerRecognizer (native torch, GPU)", bert_enabled=True)
+    _run("with BertNerRecognizer (native torch, auto device)", bert_enabled=True)

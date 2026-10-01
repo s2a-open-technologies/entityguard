@@ -22,6 +22,7 @@ Ausgabe:  "Patient [NAME], geb. [DATUM/ZEIT], [MED_IDENTIFIKATOR]-versichert, Fa
 - [OpenWebUI-Integration](#openwebui-integration)
 - [Docker](#docker)
 - [Konfiguration](#konfiguration)
+- [BERT NER (optionaler Qualitäts-Boost)](#bert-ner-optionaler-qualitäts-boost)
 - [Architektur](#architektur)
 - [Entwicklung](#entwicklung)
 - [Fehlerbehebung](#fehlerbehebung)
@@ -267,8 +268,44 @@ Das `docker-compose.yml` bindet das `data/`-Verzeichnis als Volume ein. Die SQLi
 | Variable | Beschreibung | Default |
 |----------|--------------|---------|
 | `PYTHONUNBUFFERED` | Log-Ausgabe direkt in Container-Logs | `1` |
+| `BERT_NER_MODEL` | HuggingFace-Modell für den BERT-NER-Recognizer | `fhswf/bert_de_ner` |
+| `BERT_NER_DEVICE` | Device erzwingen (`cpu`, `cuda`, `cuda:0`), sonst Auto-Erkennung | automatisch |
+| `BERT_NER_ENABLED` | Fallback, wenn keine DB/`bert_ner`-Zeile verfügbar ist (z. B. im Benchmark-Script) | `false` |
 
-### Analyzer-Parameter (`src/components/cstm_analyzer.py`)
+### BERT NER (optionaler Qualitäts-Boost)
+
+Der `bert_ner`-Recognizer (`backend/components/bert_recognizer.py`) setzt ein
+Transformer-NER-Modell **parallel** zu spaCy + Regex-Patterns ein und
+verbessert die Erkennung von Personennamen, Orten und Organisationen in
+freien Texten (auf dem Benchmark-Set: 65 % → 87 % Recall gegenüber
+spaCy allein).
+
+**Er ist ab Werk deaktiviert** (Migration `010`), da spaCy + Patterns für
+die Kernentitäten ausreichen und BERT je Text ~90 ms (CPU) bzw. ~15–20 ms
+(GPU) zusätzlich kostet. Zum Aktivieren:
+
+1. Admin-UI → Erkennungsregeln → `bert_ner` → Bearbeiten → Aktiv setzen
+2. `POST /api/v1/entityguard/reload` (kein Neustart nötig)
+
+Beim ersten aktivierten Request lädt der Analyzer das Modell einmalig
+(~440 MB, ~4 s); danach bleibt es für die Prozesslebensdauer im Speicher.
+
+**Messwerte** (`scripts/benchmark_bert_recognizer.py`, 3 Texte à ~25 Wörter):
+
+| Konfiguration | Latenz/Call | Modellgröße |
+|---|---|---|
+| spaCy + DB-Patterns (Default) | ~6 ms | — |
+| + `fhswf/bert_de_ner` (CPU, 4 Kerne) | ~89 ms | ~440 MB |
+| + `fhswf/bert_de_ner` (GPU) | ~15–20 ms | ~440 MB |
+| + `xlm-roberta-large-...-german` (CPU) | ~232 ms | ~2,2 GB |
+
+Das frühere Default-Modell `xlm-roberta-large-finetuned-conll03-german` liefert
+auf deutschen Texten **dieselbe Recall-Qualität** wie das 5× kleinere
+`fhswf/bert_de_ner`, ist aber deutlich langsamer — nur noch via
+`BERT_NER_MODEL` für GPU-Betrieb sinnvoll. Docker-Deployments haben
+typischerweise keine GPU; dort ist BERT (falls aktiviert) automatisch auf CPU.
+
+### Analyzer-Parameter (`backend/components/cstm_analyzer.py`)
 
 | Parameter | Beschreibung | Default |
 |-----------|--------------|---------|
@@ -282,18 +319,22 @@ Das `docker-compose.yml` bindet das `data/`-Verzeichnis als Volume ein. Die SQLi
 ```
 main.py                          FastAPI App Factory, Uvicorn Port 9500
 │
-├── src/views/anonymizer.py      Router: /api/v1/entityguard/*
+├── backend/views/anonymizer.py  Router: /api/v1/entityguard/*
 │   └── _analyzer                Gecachter CustomAnalyzer (Singleton)
 │
-├── src/components/
+├── backend/components/
 │   └── cstm_analyzer.py         CustomAnalyzer (Presidio + spaCy)
 │                                DatabasePatternProvider (DB → PatternRecognizer)
 │
-├── src/database/
+├── backend/database/
 │   ├── models.py                RecognizerModel, PatternModel, EntityModel, AdminUser
 │   ├── crud.py                  CRUD-Operationen
 │
-├── src/admin/                   Admin-UI (Jinja2, Session-Auth)
+├── backend/admin/               Admin-UI-Routen (Jinja2, Session-Auth)
+│
+├── frontend/                    Statische Assets & Templates
+│   ├── static/                  CSS, JS
+│   └── templates/               Jinja2-Templates (Admin-UI, Sanitize-Seite)
 │
 └── alembic/                     Datenbankmigrationen (inkl. Seed-Daten)
 ```
