@@ -18,7 +18,8 @@ section as the GitHub Release notes.
   Text schreiben oder `.txt`/`.md` per Button bzw. Drag & Drop laden, rechts
   erscheint die anonymisierte Version live beim Tippen (600 ms Debounce).
   Erkannte Platzhalter sind hervorgehoben, Hover zeigt den Originalwert;
-  Entitäts-Chips und Kopieren-Button inklusive. Per Sidebar und
+  Entitäts-Chips und Kopieren-Button inklusive. Die Seite füllt die volle
+  Fensterhöhe (Eingabe/Ausgabe wachsen mit dem Fenster). Per Sidebar und
   Dashboard-Schnellzugriff erreichbar; die Seite bleibt öffentlich (kein
   Login), eingeloggte Admins sehen die Sidebar.
 - **Auswahlbarer Transformer-Modelle** — zwei Modelle, je über eine eigene

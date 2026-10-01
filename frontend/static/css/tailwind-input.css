@@ -134,6 +134,41 @@
         @apply ml-0 flex items-center justify-center min-h-screen max-w-full;
     }
 
+    /* Full-height content variant: the page (e.g. /sanitize) fills the
+     * viewport instead of scrolling - the sidebar stays fixed, the inner
+     * flex chain (content -> wrap -> grid -> panel -> textarea) stretches
+     * so the input/output areas use all available height. */
+    .content-fullheight {
+        @apply flex flex-col overflow-hidden py-5 px-8;
+        height: 100vh;
+    }
+
+    .content-fullheight.no-sidebar {
+        @apply items-stretch;
+    }
+
+    .content-fullheight .sanitize-wrap {
+        @apply flex flex-col flex-1 min-h-0;
+    }
+
+    .content-fullheight .sanitize-wrap .page-header,
+    .content-fullheight .sanitize-wrap .help-text {
+        @apply shrink-0;
+    }
+
+    .content-fullheight .sanitize-grid {
+        @apply flex-1 min-h-0;
+    }
+
+    .content-fullheight .sanitize-panel {
+        min-height: 0;
+    }
+
+    .content-fullheight .sanitize-input,
+    .content-fullheight .sanitize-output {
+        min-height: 0;
+    }
+
     /* Login */
     .login-container {
         @apply w-full max-w-md;
@@ -677,6 +712,21 @@
 
     .sanitize-grid {
         @apply grid-cols-1;
+    }
+
+    /* Full-height mode makes no sense on mobile - restore scrolling */
+    .content-fullheight {
+        @apply overflow-auto;
+        height: auto;
+    }
+
+    .content-fullheight .sanitize-panel {
+        min-height: 18rem;
+    }
+
+    .content-fullheight .sanitize-input,
+    .content-fullheight .sanitize-output {
+        min-height: 12rem;
     }
 
     .sanitize-panel {

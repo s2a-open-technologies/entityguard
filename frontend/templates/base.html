@@ -73,7 +73,7 @@
             </div>
         </aside>
         {% endif %}
-        <main class="content {% if not user %}no-sidebar{% endif %}">
+        <main class="content {% if not user %}no-sidebar{% endif %} {% block content_class %}{% endblock %}">
             {% if error %}
             <div class="alert alert-error">{{ error }}</div>
             {% endif %}
