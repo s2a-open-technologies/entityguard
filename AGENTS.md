@@ -73,6 +73,16 @@ Service listens on `http://localhost:9500` (`main.py` hardcodes port `9500`).
 - `uv run pytest` / `uv run pytest -v`
 - Currently no tests exist; add tests under a `tests/` directory if extending the suite.
 
+## Releases / Changelog
+
+- All notable changes are documented in `CHANGELOG.md` (Keep a Changelog format). Add your changes to the `[Unreleased]` section as part of the work, not afterwards.
+- Canonical version lives in `pyproject.toml` (and mirrored in `main.py`'s FastAPI `version=`). The root `package.json` is Tailwind build tooling with its own version - never synced.
+- Release workflow:
+  1. Make sure `[Unreleased]` in `CHANGELOG.md` has bullets (empty sections abort the bump with a warning).
+  2. `uv run python scripts/bump_version.py minor --commit` (or `patch`/`major`) - bumps the version, moves the `[Unreleased]` section under `## [X.Y.Z] — date`, commits and tags `vX.Y.Z`.
+  3. `git push && git push --tags` - the tag push triggers `.github/workflows/release.yml`, which extracts the CHANGELOG section for that version and creates the GitHub Release with it as notes.
+- Never create tags/releases manually; the script + workflow are the single path.
+
 ## Useful Verification Commands
 
 ```bash
