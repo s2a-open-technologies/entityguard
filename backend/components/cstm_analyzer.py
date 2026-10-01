@@ -24,13 +24,13 @@ from presidio_analyzer import AnalyzerEngine, Pattern, PatternRecognizer
 from presidio_analyzer.nlp_engine import NlpEngineProvider
 from sqlalchemy.orm import Session
 
-from backend.components.bert_recognizer import BertNerRecognizer
-from backend.database.crud import get_allowed_values, get_entities, get_recognizer_by_name, get_recognizers
+from backend.components.bert_recognizer import (
+    BERT_MODEL_REGISTRY,
+    BertNerRecognizer,
+    resolve_registry_entry,
+)
+from backend.database.crud import get_allowed_values, get_entities, get_recognizers
 from backend.database.models import RecognizerModel
-
-# Name of the seeded DB row (alembic/versions/007_seed_bert_ner_recognizer.py)
-# that controls whether the BERT NER recognizer is registered.
-BERT_NER_RECOGNIZER_NAME = "bert_ner"
 
 # Logger
 logger = logging.getLogger("uvicorn.error")
@@ -44,59 +44,70 @@ nlp_configuration = {
     }]
 }
 
-# Module-level singleton: the transformer model is expensive to load, so it
-# must survive across CustomAnalyzer re-instantiations (e.g. every /reload
-# call creates a brand new CustomAnalyzer). Enablement is controlled by the
-# 'bert_ner' DB row (seeded active by default, toggleable via the admin UI);
-# the model itself is only ever loaded on first actual use.
-_bert_recognizer: Optional[BertNerRecognizer] = None
+# Module-level cache: transformer models are expensive to load, so each
+# instance must survive across CustomAnalyzer re-instantiations (e.g. every
+# /reload call creates a brand new CustomAnalyzer). Keyed by the registry
+# key (= recognizers.name DB row). Enablement is controlled per model by
+# its DB row (toggleable via the admin UI, all seeded inactive by
+# migration 010/011); a model itself is only ever loaded on first use.
+_bert_recognizers: dict[str, BertNerRecognizer] = {}
 
 
-def _get_bert_ner_row(db: Optional[Session]) -> Optional[RecognizerModel]:
-    """Fetch the 'bert_ner' recognizer row, if a DB session is available."""
-    if db is None:
-        return None
-    try:
-        return get_recognizer_by_name(db, BERT_NER_RECOGNIZER_NAME)
-    except Exception as e:
-        logger.warning(f"Could not read '{BERT_NER_RECOGNIZER_NAME}' recognizer from DB: {e}")
-        return None
-
-
-def _get_bert_recognizer(db: Optional[Session]) -> Optional[BertNerRecognizer]:
+def _get_bert_recognizers(db: Optional[Session]) -> List[BertNerRecognizer]:
     """
-    Lazily create and cache the BERT NER recognizer, if enabled.
+    Lazily create and cache one BertNerRecognizer per enabled registry model.
 
-    Enablement, context words and min_score are all sourced from the
-    'bert_ner' DB row (toggleable via the admin UI, seeded active by
-    default in 007_seed_bert_ner_recognizer.py). Falls back to the
-    BERT_NER_ENABLED env var when no DB session/row is available (e.g. the
-    benchmark script). The underlying model is only ever loaded once; on
-    later calls (e.g. after /reload), only `.context`/`.min_score` on the
-    cached instance are refreshed from the DB, not the model itself.
+    Iterate over BERT_MODEL_REGISTRY (key = recognizers.name DB row) and
+    return the recognizers whose DB row is active. Context words and
+    min_score are sourced from each row (toggleable via the admin UI).
+    Falls back to the BERT_NER_ENABLED env var when no DB session/rows are
+    available (e.g. the benchmark script); in that fallback mode a
+    BERT_NER_MODEL env var selects the model, defaulting to
+    transformer_ner_fhswf. The underlying models are only ever loaded
+    once; on later calls (e.g. after /reload), only `.context`/
+    `.min_score` on the cached instances are refreshed from the DB, not
+    the models themselves.
     """
-    global _bert_recognizer
+    rows: dict[str, RecognizerModel] = {}
+    if db is not None:
+        try:
+            for row in get_recognizers(db, active_only=True):
+                if row.name in BERT_MODEL_REGISTRY:
+                    rows[row.name] = row
+        except Exception as e:
+            logger.warning(f"Could not read transformer recognizer rows from DB: {e}")
 
-    row = _get_bert_ner_row(db)
+    enabled_keys: List[str] = []
+    if rows:
+        enabled_keys = list(rows.keys())
+    elif db is None and os.getenv("BERT_NER_ENABLED", "false").lower() in ("1", "true", "yes"):
+        # No DB available (benchmark script path): env vars decide.
+        try:
+            enabled_keys = [resolve_registry_entry()[0]]
+        except ValueError as e:
+            logger.error(f"BERT NER disabled: {e}")
 
-    if row is not None:
-        enabled = row.is_active
-    else:
-        enabled = os.getenv("BERT_NER_ENABLED", "false").lower() in ("1", "true", "yes")
+    recognizers: List[BertNerRecognizer] = []
+    for key in enabled_keys:
+        context_words = [cw.word for cw in rows[key].context_words] if rows else []
+        min_score = rows[key].min_score if rows else None
 
-    if not enabled:
-        return None
+        if key not in _bert_recognizers:
+            entry = BERT_MODEL_REGISTRY[key]
+            _bert_recognizers[key] = BertNerRecognizer(
+                name=key,
+                model_name=str(entry["model"]),
+                label_mapping=dict(entry["mapping"]),
+                context=context_words,
+                min_score=min_score,
+            )
+        else:
+            _bert_recognizers[key].context = context_words
+            _bert_recognizers[key].min_score = min_score
 
-    context_words = [cw.word for cw in row.context_words] if row is not None else []
-    min_score = row.min_score if row is not None else None
+        recognizers.append(_bert_recognizers[key])
 
-    if _bert_recognizer is None:
-        _bert_recognizer = BertNerRecognizer(context=context_words, min_score=min_score)
-    else:
-        _bert_recognizer.context = context_words
-        _bert_recognizer.min_score = min_score
-
-    return _bert_recognizer
+    return recognizers
 
 
 def _index_placeholder(base_placeholder: str, index: int) -> str:
@@ -227,7 +238,7 @@ class CustomAnalyzer:
             for recognizer in recognizers:
                 self.analyzer.registry.add_recognizer(recognizer=recognizer)
 
-            self._add_bert_recognizer(db)
+            self._add_bert_recognizers(db)
 
             logger.info(f"GuardrailAnalyzer for '{language}' initialized with {len(recognizers)} custom recognizers")
 
@@ -263,10 +274,9 @@ class CustomAnalyzer:
         logger.info(f"Remaining recognizers after cleanup: {remaining}")
             
 
-    def _add_bert_recognizer(self, db: Optional[Session]) -> None:
-        """Register the cached BERT NER recognizer, if enabled, without reloading the model."""
-        bert_recognizer = _get_bert_recognizer(db)
-        if bert_recognizer is not None:
+    def _add_bert_recognizers(self, db: Optional[Session]) -> None:
+        """Register the cached transformer recognizers, if enabled, without reloading the models."""
+        for bert_recognizer in _get_bert_recognizers(db):
             self.analyzer.registry.add_recognizer(recognizer=bert_recognizer)
 
     def _load_recognizers(self, db: Optional[Session]) -> List[PatternRecognizer]:
@@ -325,10 +335,11 @@ class CustomAnalyzer:
         for recognizer in recognizers:
             self.analyzer.registry.add_recognizer(recognizer=recognizer)
 
-        # Re-register the cached BERT recognizer (it was removed above along
-        # with the other non-'spacy_nlp' recognizers); the underlying model
-        # is not reloaded since _get_bert_recognizer() returns the cached instance.
-        self._add_bert_recognizer(db)
+        # Re-register the cached transformer recognizers (they were removed
+        # above along with the other non-'spacy_nlp' recognizers); the
+        # underlying models are not reloaded since _get_bert_recognizers()
+        # returns the cached instances.
+        self._add_bert_recognizers(db)
 
         logger.info(f"Reloaded {len(recognizers)} recognizers")
         return len(recognizers)

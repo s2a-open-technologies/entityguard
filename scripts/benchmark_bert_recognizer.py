@@ -20,13 +20,19 @@ recognizer (native PyTorch, GPU if available) disabled vs enabled. Run with:
 
     uv run python scripts/benchmark_bert_recognizer.py
 
+Without a DB session the script enables the model via env vars. The model
+must be in BERT_MODEL_REGISTRY (backend/components/bert_recognizer.py);
+both selectable models can be benchmarked:
+
+    BERT_NER_ENABLED=true \
+        uv run python scripts/benchmark_bert_recognizer.py            # fhswf
+    BERT_NER_ENABLED=true BERT_NER_MODEL=OpenMed/OpenMed-PII-German-SuperClinical-Small-44M-v1 \
+        uv run python scripts/benchmark_bert_recognizer.py            # OpenMed
+
 Environment variables (all optional):
-    BERT_NER_MODEL    HuggingFace model name. Default since the CPU-benchmark
-                      switch: fhswf/bert_de_ner (~110M params, ~440 MB,
-                      ~89ms/call on 4 CPU cores). The previously used
-                      xlm-roberta-large-finetuned-conll03-german (~550M,
-                      ~2.2 GB) is still selectable but needs a GPU for
-                      interactive latency.
+    BERT_NER_MODEL    HuggingFace model name, must be in BERT_MODEL_REGISTRY.
+                      Default: fhswf/bert_de_ner (~110M params, ~440 MB,
+                      ~89ms/call on 4 CPU cores).
     BERT_NER_DEVICE   Force a device, e.g. "cpu" or "cuda". Default: auto
                       (cuda if available, else cpu). Measure the CPU case
                       explicitly with BERT_NER_DEVICE=cpu - this matches the

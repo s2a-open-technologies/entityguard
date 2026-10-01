@@ -22,7 +22,7 @@ Ausgabe:  "Patient [NAME], geb. [DATUM/ZEIT], [MED_IDENTIFIKATOR]-versichert, Fa
 - [OpenWebUI-Integration](#openwebui-integration)
 - [Docker](#docker)
 - [Konfiguration](#konfiguration)
-- [BERT NER (optionaler Qualitäts-Boost)](#bert-ner-optionaler-qualitäts-boost)
+- [Transformer-Modelle (optionaler Qualitäts-Boost)](#transformer-modelle-optionaler-qualitäts-boost)
 - [Architektur](#architektur)
 - [Entwicklung](#entwicklung)
 - [Fehlerbehebung](#fehlerbehebung)
@@ -268,42 +268,39 @@ Das `docker-compose.yml` bindet das `data/`-Verzeichnis als Volume ein. Die SQLi
 | Variable | Beschreibung | Default |
 |----------|--------------|---------|
 | `PYTHONUNBUFFERED` | Log-Ausgabe direkt in Container-Logs | `1` |
-| `BERT_NER_MODEL` | HuggingFace-Modell für den BERT-NER-Recognizer | `fhswf/bert_de_ner` |
+| `BERT_NER_MODEL` | HuggingFace-Modell (nur relevant ohne DB, z. B. Benchmark-Script; muss in der Registry sein) | `fhswf/bert_de_ner` |
 | `BERT_NER_DEVICE` | Device erzwingen (`cpu`, `cuda`, `cuda:0`), sonst Auto-Erkennung | automatisch |
-| `BERT_NER_ENABLED` | Fallback, wenn keine DB/`bert_ner`-Zeile verfügbar ist (z. B. im Benchmark-Script) | `false` |
+| `BERT_NER_ENABLED` | Fallback ohne DB-Session (Benchmark-Script) | `false` |
 
-### BERT NER (optionaler Qualitäts-Boost)
+### Transformer-Modelle (optionaler Qualitäts-Boost)
 
-Der `bert_ner`-Recognizer (`backend/components/bert_recognizer.py`) setzt ein
-Transformer-NER-Modell **parallel** zu spaCy + Regex-Patterns ein und
-verbessert die Erkennung von Personennamen, Orten und Organisationen in
-freien Texten (auf dem Benchmark-Set: 65 % → 87 % Recall gegenüber
-spaCy allein).
+EntityGuard unterstützt zwei Transformer-Modelle, die **parallel** zu spaCy +
+Regex-Patterns laufen und je über eine eigene Erkennungsregel-Zeile im
+Admin-UI an/ausgeschaltet werden (`backend/components/bert_recognizer.py`,
+`BERT_MODEL_REGISTRY`):
 
-**Er ist ab Werk deaktiviert** (Migration `010`), da spaCy + Patterns für
-die Kernentitäten ausreichen und BERT je Text ~90 ms (CPU) bzw. ~15–20 ms
-(GPU) zusätzlich kostet. Zum Aktivieren:
+| Erkennungsregel (Admin-UI) | Modell | Stärke | CPU | GPU |
+|---|---|---|---|---|
+| `transformer_ner_fhswf` | `fhswf/bert_de_ner` (110M) | Freie Namen, Orte, **Organisationen** in Fließtext (65 % → 87 % Recall vs. spaCy allein) | ~89 ms | ~14–20 ms |
+| `transformer_pii_openmed` | `OpenMed-PII-German-SuperClinical-Small-44M-v1` (44M) | Strukturiertes PII als Sicherheitsnetz über den Regex-Patterns: Adressen, Geburtsdatum, IBAN, E-Mail, Telefon — auch in Format-Varianten, die Regex verpasst | ~99 ms | ~15 ms |
 
-1. Admin-UI → Erkennungsregeln → `bert_ner` → Bearbeiten → Aktiv setzen
+**Beide sind ab Werk deaktiviert** (Migrationen `010`/`011`), da spaCy +
+Patterns die Kernentitäten mit ~6 ms abdecken. Zum Aktivieren:
+
+1. Admin-UI → Erkennungsregeln → gewünschte Modell-Zeile → Bearbeiten → Aktiv
 2. `POST /api/v1/entityguard/reload` (kein Neustart nötig)
 
-Beim ersten aktivierten Request lädt der Analyzer das Modell einmalig
-(~440 MB, ~4 s); danach bleibt es für die Prozesslebensdauer im Speicher.
+Beide Modelle gleichzeitig aktiv sind erlaubt (Latenzen addieren sich auf
+~190 ms CPU). Beim ersten aktivierten Request lädt der Analyzer jedes
+Modell einmalig (fhswf ~440 MB / ~4 s, OpenMed ~180 MB); danach bleiben sie
+für die Prozesslebensdauer im Speicher und überleben `/reload`.
 
-**Messwerte** (`scripts/benchmark_bert_recognizer.py`, 3 Texte à ~25 Wörter):
+Nicht gemappte Labels (z. B. SSN, AGE des OpenMed-Modells) werden verworfen.
+Neue Entitätstypen lassen sich ergänzen: Entität im Admin-UI anlegen und das
+Label in `BERT_MODEL_REGISTRY` nachtragen.
 
-| Konfiguration | Latenz/Call | Modellgröße |
-|---|---|---|
-| spaCy + DB-Patterns (Default) | ~6 ms | — |
-| + `fhswf/bert_de_ner` (CPU, 4 Kerne) | ~89 ms | ~440 MB |
-| + `fhswf/bert_de_ner` (GPU) | ~15–20 ms | ~440 MB |
-| + `xlm-roberta-large-...-german` (CPU) | ~232 ms | ~2,2 GB |
-
-Das frühere Default-Modell `xlm-roberta-large-finetuned-conll03-german` liefert
-auf deutschen Texten **dieselbe Recall-Qualität** wie das 5× kleinere
-`fhswf/bert_de_ner`, ist aber deutlich langsamer — nur noch via
-`BERT_NER_MODEL` für GPU-Betrieb sinnvoll. Docker-Deployments haben
-typischerweise keine GPU; dort ist BERT (falls aktiviert) automatisch auf CPU.
+Docker-Deployments haben typischerweise keine GPU; dort laufen aktivierte
+Modelle automatisch auf CPU.
 
 ### Analyzer-Parameter (`backend/components/cstm_analyzer.py`)
 

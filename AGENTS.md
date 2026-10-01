@@ -58,8 +58,7 @@ Service listens on `http://localhost:9500` (`main.py` hardcodes port `9500`).
 - Admin UI login: `admin` / `admin`. Change the password immediately in production.
 - `/api/v1/entityguard/sanitize` returns `sanitized_text` plus a `mapping` (placeholder -> original value) for every masked entity occurrence. Placeholders are uniquely indexed per occurrence (e.g. `[EMAIL_1]`, `[EMAIL_2]`), not just per entity type.
 - Placeholders come from the `entities` table; if an entity is inactive, it will not be passed to Presidio for analysis. The `DEFAULT` operator maps to `[SENSITIV]`.
-- The `bert_ner` recognizer (transformer NER, `backend/components/bert_recognizer.py`) is **inactive by default** (migration `010`). Toggle it in the admin UI + `/reload`; no restart, model loads lazily on first use and is cached module-level (survives `/reload`).
-- Default BERT model: `fhswf/bert_de_ner` (~440 MB; ~89 ms/call CPU, ~15-20 ms GPU). Old default `xlm-roberta-large-finetuned-conll03-german` (~2.2 GB) has the same recall on German text but is ~2.6x slower on CPU - only useful with GPU. Selectable via `BERT_NER_MODEL`; device via `BERT_NER_DEVICE` (`cpu`/`cuda`/`cuda:0`).
+- Transformer models (`backend/components/bert_recognizer.py`) are **inactive by default** (migrations `010`/`011`). Selectable via `BERT_MODEL_REGISTRY` (key = `recognizers.name` DB row): `transformer_ner_fhswf` (fhswf/bert_de_ner, free names/locations/organizations) and `transformer_pii_openmed` (OpenMed PII German Small 44M, structured PII safety net). Toggle each row in the admin UI + `/reload`; no restart, models load lazily on first use and are cached module-level (survive `/reload`). Latencies add up when both are active.
 - `BERT_NER_DEVICE` must be a string device spec - transformers >= 4.5x rejects integer devices (`-1` used to mean CPU; now use `cpu`).
 
 ## Editing Patterns / Entities
