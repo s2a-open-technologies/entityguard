@@ -16,6 +16,7 @@ You should have received a copy of the GNU Affero General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 
+import logging
 import re
 from pathlib import Path
 from typing import Annotated
@@ -24,6 +25,8 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
+from backend.components.bert_recognizer import BERT_MODEL_REGISTRY
+from backend.components.cstm_analyzer import CustomAnalyzer
 from backend.database import SessionLocal
 from backend.database.crud import (
     create_allowed_value, create_context_word, create_entity, create_pattern, create_recognizer,
@@ -39,6 +42,9 @@ from .dependencies import get_template_context
 
 # Router
 admin_router = APIRouter(prefix="/admin", tags=["Admin"])
+
+# Logger
+logger = logging.getLogger("uvicorn.error")
 
 # Templates
 TEMPLATES_DIR = Path(__file__).resolve().parents[2] / "frontend" / "templates"
@@ -132,10 +138,14 @@ async def howto_page(request: Request, user: dict = Depends(require_auth)):
 
 @admin_router.get("/recognizers", response_class=HTMLResponse)
 async def list_recognizers(request: Request, user: dict = Depends(require_auth)):
-    """Render the list of recognizers."""
+    """Render the list of recognizers (excluding transformer model rows)."""
     db = SessionLocal()
     try:
-        recognizers = get_recognizers(db)
+        # Transformer models are managed on /admin/modelle, not here
+        recognizers = [
+            r for r in get_recognizers(db)
+            if r.name not in BERT_MODEL_REGISTRY
+        ]
         context = get_template_context(request, recognizers=recognizers)
         return templates.TemplateResponse("recognizers/list.html", context)
     finally:
@@ -222,6 +232,9 @@ async def view_recognizer(
         recognizer = get_recognizer(db, recognizer_id)
         if not recognizer:
             raise HTTPException(status_code=404, detail="Erkennungsregel nicht gefunden")
+        if recognizer.name in BERT_MODEL_REGISTRY:
+            # Model rows are managed on /admin/modelle
+            return RedirectResponse(url="/admin/modelle", status_code=303)
 
         patterns = get_patterns_by_recognizer(db, recognizer_id)
         context_words = get_context_words_by_recognizer(db, recognizer_id)
@@ -249,6 +262,8 @@ async def edit_recognizer_page(
         recognizer = get_recognizer(db, recognizer_id)
         if not recognizer:
             raise HTTPException(status_code=404, detail="Erkennungsregel nicht gefunden")
+        if recognizer.name in BERT_MODEL_REGISTRY:
+            return RedirectResponse(url="/admin/modelle", status_code=303)
 
         entities = get_entities(db, active_only=True)
         context = get_template_context(request, recognizer=recognizer, entities=entities)
@@ -274,6 +289,8 @@ async def edit_recognizer_submit(
         recognizer = get_recognizer(db, recognizer_id)
         if not recognizer:
             raise HTTPException(status_code=404, detail="Erkennungsregel nicht gefunden")
+        if recognizer.name in BERT_MODEL_REGISTRY:
+            return RedirectResponse(url="/admin/modelle", status_code=303)
 
         # Check if name already exists (for another recognizer)
         existing = get_recognizer_by_name(db, name)
@@ -323,6 +340,10 @@ async def delete_recognizer_submit(
     """Delete a recognizer."""
     db = SessionLocal()
     try:
+        recognizer = get_recognizer(db, recognizer_id)
+        if recognizer and recognizer.name in BERT_MODEL_REGISTRY:
+            # Model rows are managed on /admin/modelle and must not be deleted
+            return RedirectResponse(url="/admin/modelle", status_code=303)
         delete_recognizer(db, recognizer_id)
         return RedirectResponse(url="/admin/recognizers", status_code=303)
     finally:
@@ -769,5 +790,93 @@ async def delete_entity_submit(
     try:
         delete_entity(db, entity_id)
         return RedirectResponse(url="/admin/entities", status_code=303)
+    finally:
+        db.close()
+
+
+# ============================================================================
+# Transformer models (on/off switches, not editable recognizers)
+# ============================================================================
+
+# Human-readable descriptions for the model cards. Keys are the registry
+# keys (= recognizers.name DB rows) from BERT_MODEL_REGISTRY.
+MODEL_DESCRIPTIONS = {
+    "transformer_ner_fhswf": {
+        "title": "Fließtext-NER (fhswf/bert_de_ner)",
+        "description": (
+            "Erkennt freie Namen, Orte und Organisationen im Fließtext - auch "
+            "ohne umgebende Schlüsselwörter. ~110M Parameter, ~89 ms/Aufruf "
+            "(CPU) bzw. ~14-20 ms (GPU)."
+        ),
+    },
+    "transformer_pii_openmed": {
+        "title": "PII-Sicherheitsnetz (OpenMed PII German 44M)",
+        "description": (
+            "Zweites Auge für strukturierte personenbezogene Daten: Adressen, "
+            "Geburtsdatum, IBAN, E-Mail, Telefon - auch in Format-Varianten, "
+            "die die Regex-Muster verpassen. ~44M Parameter, ~99 ms/Aufruf (CPU)."
+        ),
+    },
+}
+
+
+@admin_router.get("/modelle", response_class=HTMLResponse)
+async def list_models(request: Request, user: dict = Depends(require_auth)):
+    """Render the transformer model on/off switches."""
+    db = SessionLocal()
+    try:
+        rows = {row.name: row for row in get_recognizers(db)}
+        models = []
+        for key, entry in BERT_MODEL_REGISTRY.items():
+            row = rows.get(key)
+            meta = MODEL_DESCRIPTIONS.get(key, {"title": key, "description": ""})
+            models.append({
+                "key": key,
+                "title": meta["title"],
+                "description": meta["description"],
+                "model": entry["model"],
+                "is_active": bool(row.is_active) if row else False,
+                "entities": ", ".join(sorted(set(entry["mapping"].values()))),
+            })
+        context = get_template_context(request, models=models)
+        return templates.TemplateResponse("models/list.html", context)
+    finally:
+        db.close()
+
+
+@admin_router.post("/modelle/{model_key}/toggle")
+async def toggle_model(
+    request: Request,
+    model_key: str,
+    user: dict = Depends(require_auth)
+):
+    """Toggle a transformer model on or off and rebuild the analyzer.
+
+    The model rows are intentionally NOT editable recognizers: everything
+    (model, label mapping) comes from BERT_MODEL_REGISTRY in code - the
+    admin UI only flips the is_active flag and reloads, mirroring the
+    /api/v1/reload flow.
+    """
+    if model_key not in BERT_MODEL_REGISTRY:
+        raise HTTPException(status_code=404, detail="Modell nicht gefunden")
+
+    db = SessionLocal()
+    try:
+        row = get_recognizer_by_name(db, model_key)
+        if not row:
+            raise HTTPException(status_code=404, detail="Modell-Zeile nicht in der Datenbank")
+
+        update_recognizer(db, row.id, is_active=not row.is_active)
+
+        # Rebuild the singleton analyzer immediately (same as POST /reload)
+        import backend.views.anonymizer as anonymizer_module
+        try:
+            analyzer = CustomAnalyzer(language="de", db=db)
+            anonymizer_module._analyzer = analyzer
+            logger.info(f"Analyzer rebuilt after toggling model '{model_key}'")
+        except Exception as e:
+            logger.error(f"Error rebuilding analyzer after model toggle: {e}")
+
+        return RedirectResponse(url="/admin/modelle", status_code=303)
     finally:
         db.close()

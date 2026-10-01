@@ -287,8 +287,8 @@ Admin-UI an/ausgeschaltet werden (`backend/components/bert_recognizer.py`,
 **Beide sind ab Werk deaktiviert** (Migrationen `010`/`011`), da spaCy +
 Patterns die Kernentitäten mit ~6 ms abdecken. Zum Aktivieren:
 
-1. Admin-UI → Erkennungsregeln → gewünschte Modell-Zeile → Bearbeiten → Aktiv
-2. `POST /api/v1/entityguard/reload` (kein Neustart nötig)
+1. Admin-UI → **Modelle** → gewünschtes Modell → Einschalten (greift sofort,
+   kein Neustart und kein separater Reload nötig)
 
 Beide Modelle gleichzeitig aktiv sind erlaubt (Latenzen addieren sich auf
 ~190 ms CPU). Beim ersten aktivierten Request lädt der Analyzer jedes

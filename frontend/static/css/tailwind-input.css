@@ -422,6 +422,35 @@
         @apply text-slate-500 text-sm font-medium mt-1;
     }
 
+    /* Transformer model cards (/admin/modelle) */
+    .model-card {
+        @apply flex flex-col;
+    }
+
+    .model-card-header {
+        @apply flex items-start justify-between gap-3 mb-3;
+    }
+
+    .model-title {
+        @apply text-xl font-semibold text-slate-800;
+    }
+
+    .model-description {
+        @apply text-slate-500 text-sm leading-relaxed mb-4;
+    }
+
+    .model-meta {
+        @apply mb-3;
+    }
+
+    .model-entities {
+        @apply text-slate-500 text-[0.8125rem];
+    }
+
+    .model-toggle-form {
+        @apply mt-auto pt-3;
+    }
+
     /* Sections */
     .section {
         @apply bg-white p-7 rounded-xl shadow-sm border border-slate-200 mb-6;

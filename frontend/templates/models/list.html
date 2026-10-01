@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+
+{% block title %}Modelle{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Transformer-Modelle</h1>
+</div>
+
+<p class="help-text">
+    Zusätzliche KI-Modelle, die parallel zu den Erkennungsregeln laufen. Ein Modell wird einfach ein- oder
+    ausgeschaltet - Modell, Entitäts-Zuordnung und Latenz sind im Code definiert und dort dokumentiert
+    (<code>backend/components/bert_recognizer.py</code>). Änderungen greifen sofort (kein Neustart nötig);
+    das Modell wird beim ersten Einsatz geladen.
+</p>
+
+<div class="stats-grid models-grid">
+    {% for model in models %}
+    <div class="model-card stat-card">
+        <div class="model-card-header">
+            <h2 class="model-title">{{ model.title }}</h2>
+            <span class="badge {% if model.is_active %}badge-success{% else %}badge-secondary{% endif %}">
+                {% if model.is_active %}Aktiv{% else %}Inaktiv{% endif %}
+            </span>
+        </div>
+        <p class="model-description">{{ model.description }}</p>
+        <div class="model-meta">
+            <span class="tag"><code>{{ model.model }}</code></span>
+        </div>
+        <div class="model-meta">
+            <span class="model-entities">Erkannte Entitäten: {{ model.entities }}</span>
+        </div>
+        <form method="POST" action="/admin/modelle/{{ model.key }}/toggle" class="model-toggle-form">
+            {% if model.is_active %}
+            <button type="submit" class="btn btn-secondary">Ausschalten</button>
+            {% else %}
+            <button type="submit" class="btn btn-primary">Einschalten</button>
+            {% endif %}
+        </form>
+    </div>
+    {% endfor %}
+</div>
+
+{% if active_hint %}
+<div class="alert alert-success">{{ active_hint }}</div>
+{% endif %}
+{% endblock %}

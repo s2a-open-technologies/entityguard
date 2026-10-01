@@ -22,8 +22,10 @@ section as the GitHub Release notes.
   Fensterhöhe (Eingabe/Ausgabe wachsen mit dem Fenster). Per Sidebar und
   Dashboard-Schnellzugriff erreichbar; die Seite bleibt öffentlich (kein
   Login), eingeloggte Admins sehen die Sidebar.
-- **Auswahlbarer Transformer-Modelle** — zwei Modelle, je über eine eigene
-  Erkennungsregel-Zeile im Admin-UI an/ausgeschaltet (Migration `011`):
+- **Auswahlbarer Transformer-Modelle** — zwei Modelle, verwaltet über eine
+  eigene Admin-Seite **Modelle** (`/admin/modelle`) mit einfachen An/Aus-
+  Schaltern (Migration `011`); Umschalten baut den Analyzer sofort neu
+  (kein Neustart, kein separater Reload):
   - `transformer_ner_fhswf` (fhswf/bert_de_ner, 110M): freie Namen, Orte,
     Organisationen in Fließtext — 65 % → 87 % Recall vs. spaCy allein,
     ~89 ms/CPU-Call, ~14–20 ms GPU
@@ -32,6 +34,10 @@ section as the GitHub Release notes.
     IBAN, E-Mail, Telefon), ~99 ms/CPU-Call
   - Beide laufen parallel zu spaCy + Patterns; mehrere Modelle gleichzeitig
     aktiv sind erlaubt. Beide standardmäßig inaktiv (spaCy + Patterns: ~6 ms).
+    Die Modell-Zeilen sind absichtlich keine bearbeitbaren Erkennungsregeln:
+    Modell und Entitäts-Zuordnung sind im Code definiert; die
+    Erkennungsregeln-Liste blendet sie aus, Bearbeiten/Löschen leitet auf
+    /admin/modelle weiter.
 - **ORGANIZATION-Entität** (Platzhalter `[ORGANISATION]`) — vorher wurden
   Organisationen-Treffer der Modelle still verworfen, weil die Entität
   fehlte.
