@@ -44,11 +44,17 @@
         <div class="model-meta">
             <span class="model-entities">Erkannte Entitäten: {{ model.entities }}</span>
         </div>
-        <form method="POST" action="/admin/modelle/{{ model.key }}/toggle" class="model-toggle-form">
+        <form method="POST" action="/admin/modelle/{{ model.key }}/toggle" class="model-toggle-form" data-toggling-label="{% if model.is_active %}Wird ausgeschaltet…{% else %}Wird eingeschaltet…{% endif %}">
             {% if model.is_active %}
-            <button type="submit" class="btn btn-secondary">Ausschalten</button>
+            <button type="submit" class="btn btn-secondary">
+                <span class="spinner" hidden></span>
+                <span class="btn-label">Ausschalten</span>
+            </button>
             {% else %}
-            <button type="submit" class="btn btn-primary">Einschalten</button>
+            <button type="submit" class="btn btn-primary">
+                <span class="spinner" hidden></span>
+                <span class="btn-label">Einschalten</span>
+            </button>
             {% endif %}
         </form>
     </div>
@@ -58,4 +64,21 @@
 {% if active_hint %}
 <div class="alert alert-success">{{ active_hint }}</div>
 {% endif %}
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    document.querySelectorAll('.model-toggle-form').forEach(function(form) {
+        form.addEventListener('submit', function() {
+            const button = form.querySelector('button');
+            const spinner = form.querySelector('.spinner');
+            const label = form.querySelector('.btn-label');
+            if (button.disabled) return;
+            button.disabled = true;
+            button.classList.add('is-loading');
+            if (spinner) spinner.hidden = false;
+            if (label) label.textContent = form.dataset.togglingLabel || 'Einen Moment…';
+        });
+    });
+});
+</script>
 {% endblock %}
