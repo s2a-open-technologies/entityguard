@@ -36,6 +36,18 @@ section as the GitHub Release notes.
 
 ### Added
 
+- **Anrede-basiertes Personennamen-Muster** (Migration `015`): Die deutsche
+  spaCy-NER erkennt Namen wie „Stolz" oft nur isoliert, nicht im Satz
+  („Frau Stolz aus …"). Ein Default-Muster `anrede_name` fängt
+  Anrede/Titel + großgeschriebenen Namen (`Herr`, `Frau`, `Patient`,
+  `Dr.`, `Prof.`, …) deterministisch — auch ohne KI-Modell. Der Name-Teil
+  nutzt `(?-i:…)`, damit Presidios globales IGNORECASE keine Kleinschreibung
+  („aus", „ist") verschluckt.
+- **Cache-Busting für statische Assets** — `admin.css`/`admin.js` werden mit
+  ihrer mtime als Query (`?v=…`) ausgeliefert (`backend/assets.py`,
+  Jinja-Global `asset_url`). Vorher blieb nach einem Update die alte
+  `admin.js` im Browser-Cache hängen, wodurch z. B. der Regex-Umschalter auf
+  der Entitätsseite „ohne Funktion" erschien.
 - **Erkennungsquellen-Anzeige** — Entitäten-Liste und -Detailseite zeigen,
   wodurch eine Entität tatsächlich erkannt wird: `Muster`, `spaCy`/`Presidio`
   (Standard-Engines) und `Modell: …` (nur **aktive** Transformer). Entitäten

@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Admin{% endblock %} - EntityGuard</title>
-    <link rel="stylesheet" href="/static/css/admin.css">
+    <link rel="stylesheet" href="{{ asset_url('css/admin.css') }}">
 </head>
 <body>
     <div class="app-shell">
@@ -91,6 +91,6 @@
             {% block content %}{% endblock %}
         </main>
     </div>
-    <script src="/static/js/admin.js"></script>
+    <script src="{{ asset_url('js/admin.js') }}"></script>
 </body>
 </html>

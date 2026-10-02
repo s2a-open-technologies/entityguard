@@ -27,6 +27,7 @@ from fastapi.templating import Jinja2Templates
 
 from backend.components.bert_recognizer import BERT_MODEL_REGISTRY, gpu_available
 from backend.components.cstm_analyzer import CustomAnalyzer
+from backend.assets import asset_url
 from backend.database import SessionLocal
 from backend.database.crud import (
     create_allowed_value, create_context_word, create_entity, create_pattern,
@@ -49,6 +50,7 @@ logger = logging.getLogger("uvicorn.error")
 # Templates
 TEMPLATES_DIR = Path(__file__).resolve().parents[2] / "frontend" / "templates"
 templates = Jinja2Templates(directory=TEMPLATES_DIR)
+templates.env.globals["asset_url"] = asset_url
 
 
 # Entities detected by built-in Presidio engines (independent of DB patterns
