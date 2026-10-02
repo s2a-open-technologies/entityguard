@@ -33,7 +33,7 @@ from backend.database.crud import (
     delete_allowed_value, delete_context_word, delete_entity, delete_pattern,
     get_admin_user, get_allowed_values, get_allowed_value_by_value, get_context_word,
     get_context_words_by_entity, get_entities, get_entity, get_entity_by_name, get_pattern,
-    get_pattern_by_name, get_patterns_by_entity, set_detector_model_active,
+    get_pattern_by_name, get_patterns_by_entity, get_detector_models, set_detector_model_active,
     update_admin_password, update_entity, update_pattern, verify_password,
 )
 
@@ -49,6 +49,53 @@ logger = logging.getLogger("uvicorn.error")
 # Templates
 TEMPLATES_DIR = Path(__file__).resolve().parents[2] / "frontend" / "templates"
 templates = Jinja2Templates(directory=TEMPLATES_DIR)
+
+
+# Entities detected by built-in Presidio engines (independent of DB patterns
+# and transformer models). Verified against the German spaCy pipeline - its
+# NER only emits PER/LOC/ORG - plus the Presidio recognizers kept by
+# CustomAnalyzer._remove_builtin_recognizers (Email/Phone). Deliberately a
+# static map, not introspection: SpacyRecognizer advertises DATE_TIME /
+# PHONE_NUMBER / EMAIL in supported_entities although the German model never
+# produces them, and Date/Iban recognizers are removed on startup.
+BASE_ENTITY_SOURCES = {
+    "PERSON": "spaCy",
+    "LOCATION": "spaCy",
+    "ORGANIZATION": "spaCy",
+    "EMAIL_ADDRESS": "Presidio E-Mail",
+    "PHONE_NUMBER": "Presidio Telefon",
+}
+
+
+def _active_model_entity_sources(db) -> dict[str, list[str]]:
+    """Map entity name -> active detector models that can detect it."""
+    sources: dict[str, list[str]] = {}
+    active = {m.name for m in get_detector_models(db) if m.is_active}
+    for key in active:
+        entry = BERT_MODEL_REGISTRY.get(key)
+        if not entry:
+            continue
+        for entity_name in set(entry["mapping"].values()):
+            sources.setdefault(entity_name, []).append(key)
+    return sources
+
+
+def _entity_sources(entity, active_model_sources: dict[str, list[str]]) -> list[str]:
+    """Return the human-readable detection sources for one entity.
+
+    Combines DB patterns, built-in Presidio engines (BASE_ENTITY_SOURCES)
+    and currently-active transformer models. An entity with an empty list is
+    not detected at all.
+    """
+    sources: list[str] = []
+    if len(entity.patterns) > 0:
+        sources.append("Muster")
+    base = BASE_ENTITY_SOURCES.get(entity.name)
+    if base:
+        sources.append(base)
+    for model in active_model_sources.get(entity.name, []):
+        sources.append(f"Modell: {model}")
+    return sources
 
 
 def build_keyword_regex(raw_keywords: str) -> str:
@@ -328,9 +375,14 @@ async def list_entities(request: Request, user: dict = Depends(require_auth)):
     db = SessionLocal()
     try:
         entities = get_entities(db)
+        model_sources = _active_model_entity_sources(db)
         pattern_counts = {e.id: len(e.patterns) for e in entities}
+        entity_sources = {e.id: _entity_sources(e, model_sources) for e in entities}
         context = get_template_context(
-            request, entities=entities, pattern_counts=pattern_counts
+            request,
+            entities=entities,
+            pattern_counts=pattern_counts,
+            entity_sources=entity_sources,
         )
         return templates.TemplateResponse("entities/list.html", context)
     finally:
@@ -478,6 +530,7 @@ async def view_entity(
             patterns=get_patterns_by_entity(db, entity_id),
             context_words=get_context_words_by_entity(db, entity_id),
             pattern_templates=PATTERN_TEMPLATES,
+            sources=_entity_sources(entity, _active_model_entity_sources(db)),
         )
         return templates.TemplateResponse("entities/view.html", context)
     finally:

@@ -23,6 +23,12 @@ section as the GitHub Release notes.
   Admin-UI: Entitäten-Liste → Detailseite je Entität mit Mustern,
   Kontextwörtern und Muster-Tester; „Erkennungsregeln" ist aus der Sidebar
   entfernt.
+- **Tote Entitäten mit Default-Mustern versorgt** (Migration `014`):
+  `IBAN_CODE` bekommt eine IBAN-Regex (`DE…` → `[SENSITIV]`), das
+  Datumsmuster zieht von `MEDICAL_CONTEXT` auf `DATE_TIME` um (Datum wird nun
+  `[DATUM/ZEIT]` statt `[MED_IDENTIFIKATOR]`), und die nie erkannte Entität
+  `FALLNUMMER` wird entfernt (Fallnummern fängt weiterhin `MEDICAL_CONTEXT`).
+  Damit hat nach der Migration jede Entität eine reale Erkennungsquelle.
 - **API-Pfade in der Doku korrigiert**: Der Sanitize/Reload-Endpunkt heißt
   `/api/v1/sanitize` bzw. `/api/v1/reload` (nicht `/api/v1/entityguard/*`);
   README, AGENTS und `docs/OpenWebUI.md` waren hier falsch und hätten die
@@ -30,6 +36,11 @@ section as the GitHub Release notes.
 
 ### Added
 
+- **Erkennungsquellen-Anzeige** — Entitäten-Liste und -Detailseite zeigen,
+  wodurch eine Entität tatsächlich erkannt wird: `Muster`, `spaCy`/`Presidio`
+  (Standard-Engines) und `Modell: …` (nur **aktive** Transformer). Entitäten
+  ohne jede Quelle werden als **„⚠ nicht erkannt"** hervorgehoben, mit
+  Warnhinweis auf der Detailseite.
 - **Regex-Vereinfachung**: Muster lassen sich auf der Entitäts-Detailseite
   als **Stichwortliste** eingeben (komma-/zeilengetrennt → automatischer
   Wortgrenzen-Regex, in `patterns.keywords` gespeichert) oder weiterhin als
@@ -46,8 +57,9 @@ section as the GitHub Release notes.
   Login), eingeloggte Admins sehen die Sidebar.
 - **Auswahlbarer Transformer-Modelle** — vier Modelle, verwaltet über eine
   eigene Admin-Seite **Modelle** (`/admin/modelle`) mit einfachen An/Aus-
-  Schaltern (Migrationen `011`/`012`); Umschalten baut den Analyzer sofort
-  neu (kein Neustart, kein separater Reload):
+  Schaltern (Migrations `011`/`012`, Schalter seit `013` in `detector_models`);
+  Umschalten baut den Analyzer sofort neu (kein Neustart, kein separater
+  Reload):
   - `transformer_ner_fhswf` (fhswf/bert_de_ner, 110M): freie Namen, Orte,
     Organisationen in Fließtext — 65 % → 87 % Recall vs. spaCy allein,
     ~77 ms/CPU-Call, ~14 ms GPU
@@ -58,12 +70,10 @@ section as the GitHub Release notes.
     `transformer_pii_openmed_large` (434M, F1 0.976): genauere Varianten mit
     **„GPU empfohlen"**-Kennzeichnung; ohne CUDA ~167 ms bzw. ~680 ms/CPU-Call
     (Large ~11× langsamer als auf GPU)
-  - Alle laufen parallel zu spaCy + Patterns; mehrere Modelle gleichzeitig
-    aktiv sind erlaubt. Alle standardmäßig inaktiv (spaCy + Patterns: ~6 ms).
-    Die Modell-Zeilen sind absichtlich keine bearbeitbaren Erkennungsregeln:
-    Modell und Entitäts-Zuordnung sind im Code definiert; die
-    Erkennungsregeln-Liste blendet sie aus, Bearbeiten/Löschen leitet auf
-    /admin/modelle weiter.
+  - Alle laufen parallel zu spaCy + Mustern; mehrere Modelle gleichzeitig
+    aktiv sind erlaubt. Alle standardmäßig inaktiv (spaCy + Muster: ~6 ms).
+    Modell und Entitäts-Zuordnung sind im Code definiert (`BERT_MODEL_REGISTRY`),
+    die Admin-Seite schaltet sie nur an/aus.
   - Die Admin-Seite zeigt einen Live-CUDA-Status und je Modell ein
     „GPU empfohlen"-Badge. `scripts/benchmark_all_models.py` erzeugt die
     CPU/GPU-Latenztabelle für alle Registry-Modelle (Subprozess pro Lauf,

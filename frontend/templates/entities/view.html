@@ -25,6 +25,18 @@
             <dd><code>{{ entity.placeholder }}</code></dd>
             <dt>Beschreibung</dt>
             <dd>{{ entity.description or '–' }}</dd>
+            <dt>Erkennungsquellen</dt>
+            <dd>
+                {% if sources %}
+                <div class="source-chips">
+                    {% for source in sources %}
+                    <span class="source-chip">{{ source }}</span>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <span class="badge badge-warning">⚠ nicht erkannt</span>
+                {% endif %}
+            </dd>
             <dt>Status</dt>
             <dd>
                 <span class="badge {% if entity.is_active %}badge-success{% else %}badge-secondary{% endif %}">
@@ -34,6 +46,14 @@
         </dl>
     </div>
 </div>
+
+{% if not sources %}
+<div class="alert alert-error">
+    Diese Entität wird aktuell durch <strong>nichts</strong> erkannt — sie hat keine Muster, keine
+    Standard-Engine (spaCy/Presidio) und kein aktives Modell deckt sie ab. Fügen Sie unten ein Muster
+    hinzu oder aktivieren Sie unter <a href="/admin/modelle">Modelle</a> ein passendes Modell.
+</div>
+{% endif %}
 
 <div class="section">
     <h2>Muster ({{ patterns|length }})</h2>

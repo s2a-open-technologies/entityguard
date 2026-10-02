@@ -21,6 +21,7 @@
             <th>Name</th>
             <th>Platzhalter</th>
             <th>Muster</th>
+            <th>Erkennung</th>
             <th>Beschreibung</th>
             <th>Status</th>
             <th>Aktionen</th>
@@ -28,12 +29,24 @@
     </thead>
     <tbody>
         {% for entity in entities %}
+        {% set sources = entity_sources.get(entity.id, []) %}
         <tr>
             <td>
                 <a href="/admin/entities/{{ entity.id }}"><strong>{{ entity.name }}</strong></a>
             </td>
             <td><code>{{ entity.placeholder }}</code></td>
             <td>{{ pattern_counts.get(entity.id, 0) }}</td>
+            <td>
+                {% if sources %}
+                <div class="source-chips">
+                    {% for source in sources %}
+                    <span class="source-chip">{{ source }}</span>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <span class="badge badge-warning" title="Weder Muster noch Standard-Engine noch aktives Modell erkennen diese Entität">⚠ nicht erkannt</span>
+                {% endif %}
+            </td>
             <td>{{ entity.description or '-' }}</td>
             <td>
                 <span class="badge {% if entity.is_active %}badge-success{% else %}badge-secondary{% endif %}">

@@ -621,6 +621,15 @@
         @apply cursor-pointer;
     }
 
+    /* Detection source chips (entity list / detail) */
+    .source-chips {
+        @apply flex flex-wrap gap-1.5;
+    }
+
+    .source-chip {
+        @apply inline-flex items-center px-2 py-0.5 rounded-md text-[0.75rem] font-medium bg-slate-100 text-slate-600 border border-slate-200;
+    }
+
     /* Sanitize split view */
     .sanitize-wrap {
         @apply w-full max-w-full;
