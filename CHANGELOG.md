@@ -12,6 +12,8 @@ section as the GitHub Release notes.
 
 ## [Unreleased]
 
+## [1.0.0] — 2026-10-02
+
 ### Changed
 
 - **Datenmodell vereinfacht: Entitäten sind jetzt die zentrale Einheit**
@@ -120,4 +122,5 @@ section as the GitHub Release notes.
 - Keine sicherheitsrelevanten Änderungen in diesem Release. (Der Fail-Closed-
   Grundsatz von `/api/v1/entityguard/sanitize` ist unverändert.)
 
-[Unreleased]: https://github.com/daemolition/guardrails/compare/HEAD
+[Unreleased]: https://github.com/daemolition/guardrails/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/daemolition/guardrails/compare/v0.6.0...v1.0.0
