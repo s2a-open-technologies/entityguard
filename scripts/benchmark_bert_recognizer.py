@@ -21,18 +21,20 @@ recognizer (native PyTorch, GPU if available) disabled vs enabled. Run with:
     uv run python scripts/benchmark_bert_recognizer.py
 
 Without a DB session the script enables the model via env vars. The model
-must be in BERT_MODEL_REGISTRY (backend/components/bert_recognizer.py);
-both selectable models can be benchmarked:
+must be in BERT_MODEL_REGISTRY (backend/components/bert_recognizer.py):
 
     BERT_NER_ENABLED=true \
-        uv run python scripts/benchmark_bert_recognizer.py            # fhswf
-    BERT_NER_ENABLED=true BERT_NER_MODEL=OpenMed/OpenMed-PII-German-SuperClinical-Small-44M-v1 \
-        uv run python scripts/benchmark_bert_recognizer.py            # OpenMed
+        uv run python scripts/benchmark_bert_recognizer.py            # default model
+    BERT_NER_ENABLED=true BERT_NER_MODEL=OpenMed/OpenMed-PII-German-SuperClinical-Large-434M-v1 \
+        uv run python scripts/benchmark_bert_recognizer.py
+
+To benchmark every registry model on CPU and GPU in one go, use
+scripts/benchmark_all_models.py instead - it drives this script as a
+subprocess per model/device and prints a comparison table.
 
 Environment variables (all optional):
     BERT_NER_MODEL    HuggingFace model name, must be in BERT_MODEL_REGISTRY.
-                      Default: fhswf/bert_de_ner (~110M params, ~440 MB,
-                      ~89ms/call on 4 CPU cores).
+                      Default: fhswf/bert_de_ner (~110M params, ~440 MB).
     BERT_NER_DEVICE   Force a device, e.g. "cpu" or "cuda". Default: auto
                       (cuda if available, else cpu). Measure the CPU case
                       explicitly with BERT_NER_DEVICE=cpu - this matches the
@@ -71,6 +73,10 @@ def _run(label: str, bert_enabled: bool) -> None:
     analyzer = CustomAnalyzer(language="de", db=None)
     load_elapsed = time.perf_counter() - load_start
     print(f"\n[{label}] analyzer init (incl. model load if enabled): {load_elapsed:.2f}s")
+
+    # Warmup: the first call after loading includes CUDA/lazy-init costs
+    # that would otherwise inflate the mean (mainly visible on GPU).
+    analyzer.process_text(SAMPLE_TEXTS[0])
 
     durations = []
     for _ in range(N_RUNS):

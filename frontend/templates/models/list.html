@@ -14,14 +14,28 @@
     das Modell wird beim ersten Einsatz geladen.
 </p>
 
+<div class="alert {% if gpu_available %}alert-success{% else %}alert-error{% endif %}">
+    {% if gpu_available %}
+    CUDA-GPU erkannt - alle Modelle laufen mit voller Geschwindigkeit.
+    {% else %}
+    Keine CUDA-GPU erkannt - als "GPU empfohlen" markierte Modelle funktionieren, laufen auf CPU aber
+    deutlich langsamer (siehe jeweilige Beschreibung).
+    {% endif %}
+</div>
+
 <div class="stats-grid models-grid">
     {% for model in models %}
     <div class="model-card stat-card">
         <div class="model-card-header">
             <h2 class="model-title">{{ model.title }}</h2>
-            <span class="badge {% if model.is_active %}badge-success{% else %}badge-secondary{% endif %}">
-                {% if model.is_active %}Aktiv{% else %}Inaktiv{% endif %}
-            </span>
+            <div class="model-badges">
+                {% if model.gpu_recommended %}
+                <span class="badge badge-warning" title="Ohne CUDA-GPU deutlich langsamer (CPU-Latenz siehe Beschreibung)">GPU empfohlen</span>
+                {% endif %}
+                <span class="badge {% if model.is_active %}badge-success{% else %}badge-secondary{% endif %}">
+                    {% if model.is_active %}Aktiv{% else %}Inaktiv{% endif %}
+                </span>
+            </div>
         </div>
         <p class="model-description">{{ model.description }}</p>
         <div class="model-meta">

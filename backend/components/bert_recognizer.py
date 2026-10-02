@@ -27,58 +27,101 @@ logger = logging.getLogger("uvicorn.error")
 
 # Registry of selectable transformer NER/PII models. The registry key is
 # the `recognizers.name` DB row that toggles the model in the admin UI
-# (seeded by alembic migration 011). Each entry maps the model's raw
+# (seeded by alembic migration 011/012). Each entry maps the model's raw
 # entity_group labels to EntityGuard entity types (see the `entities`
 # table); labels without a mapping are dropped, i.e. never masked.
 #
+# `gpu_recommended` marks models that are only practical with a CUDA GPU -
+# the admin UI shows a "GPU empfohlen" badge, and the numbers backing that
+# call come from scripts/benchmark_all_models.py (run it after changing
+# the registry to refresh README/admin descriptions).
+#
 # Labels can be extended at runtime: create the entity in the admin UI
 # and add its label to the mapping here.
+OPENMED_PII_GERMAN_MAPPING: Dict[str, str] = {
+    "FIRSTNAME": "PERSON",
+    "LASTNAME": "PERSON",
+    "MIDDLENAME": "PERSON",
+    "PREFIX": "PERSON",
+    "STREET": "LOCATION",
+    "BUILDINGNUMBER": "LOCATION",
+    "SECONDARYADDRESS": "LOCATION",
+    "CITY": "LOCATION",
+    "STATE": "LOCATION",
+    "COUNTY": "LOCATION",
+    "ZIPCODE": "LOCATION",
+    "GPSCOORDINATES": "LOCATION",
+    "EMAIL": "EMAIL_ADDRESS",
+    "PHONE": "PHONE_NUMBER",
+    "IBAN": "IBAN_CODE",
+    "BANKACCOUNT": "IBAN_CODE",
+    "BIC": "IBAN_CODE",
+    "DATEOFBIRTH": "DATE_TIME",
+    "DATE": "DATE_TIME",
+    "TIME": "DATE_TIME",
+}
+
 BERT_MODEL_REGISTRY: Dict[str, Dict[str, object]] = {
     # Classic NER model (GermEval 2014): strong on free-form names,
     # locations and especially organizations in German text.
-    # ~110M params, ~440 MB; ~69-89 ms/call CPU, ~14-20 ms GPU.
     "transformer_ner_fhswf": {
         "model": "fhswf/bert_de_ner",
+        "gpu_recommended": False,
         "mapping": {
             "PER": "PERSON",
             "LOC": "LOCATION",
             "ORG": "ORGANIZATION",
         },
     },
-    # PII detection model (AI4Privacy German subset): safety net over the
-    # DB regex patterns for structured PII - names, addresses, dates,
-    # IBAN, e-mail, phone - including format variants regex may miss.
-    # ~44M params; ~99 ms/call CPU.
-    "transformer_pii_openmed": {
+    # OpenMed PII models (AI4Privacy German subset): safety net over the DB
+    # regex patterns for structured PII - names, addresses, dates, IBAN,
+    # e-mail, phone - including format variants regex may miss. Same label
+    # scheme across sizes; larger sizes trade CPU speed for accuracy.
+    "transformer_pii_openmed_small": {
         "model": "OpenMed/OpenMed-PII-German-SuperClinical-Small-44M-v1",
-        "mapping": {
-            "FIRSTNAME": "PERSON",
-            "LASTNAME": "PERSON",
-            "MIDDLENAME": "PERSON",
-            "PREFIX": "PERSON",
-            "STREET": "LOCATION",
-            "BUILDINGNUMBER": "LOCATION",
-            "SECONDARYADDRESS": "LOCATION",
-            "CITY": "LOCATION",
-            "STATE": "LOCATION",
-            "COUNTY": "LOCATION",
-            "ZIPCODE": "LOCATION",
-            "GPSCOORDINATES": "LOCATION",
-            "EMAIL": "EMAIL_ADDRESS",
-            "PHONE": "PHONE_NUMBER",
-            "IBAN": "IBAN_CODE",
-            "BANKACCOUNT": "IBAN_CODE",
-            "BIC": "IBAN_CODE",
-            "DATEOFBIRTH": "DATE_TIME",
-            "DATE": "DATE_TIME",
-            "TIME": "DATE_TIME",
-        },
+        "gpu_recommended": False,
+        "mapping": OPENMED_PII_GERMAN_MAPPING,
+    },
+    "transformer_pii_openmed_base": {
+        "model": "OpenMed/OpenMed-PII-German-SuperClinical-Base-184M-v1",
+        "gpu_recommended": True,
+        "mapping": OPENMED_PII_GERMAN_MAPPING,
+    },
+    "transformer_pii_openmed_large": {
+        "model": "OpenMed/OpenMed-PII-German-SuperClinical-Large-434M-v1",
+        "gpu_recommended": True,
+        "mapping": OPENMED_PII_GERMAN_MAPPING,
     },
 }
 
 # Default registry key used when no DB row is available (benchmark script
 # path via BERT_NER_ENABLED env var) and no BERT_NER_MODEL override is set.
 DEFAULT_REGISTRY_KEY = "transformer_ner_fhswf"
+
+# Cached CUDA availability for the admin UI's live GPU status. Importing
+# torch is expensive (~seconds), so this is resolved lazily on first call.
+_gpu_available: Optional[bool] = None
+
+
+def gpu_available() -> bool:
+    """
+    Report whether a CUDA GPU is available, caching the result.
+
+    Importing torch and probing CUDA costs a few seconds on first use
+    (and loads the CUDA libraries), so the result is memoized module-level.
+    Failures (torch missing, no CUDA support) are treated as "no GPU".
+
+    Returns:
+        bool: True if torch can run on CUDA, False otherwise.
+    """
+    global _gpu_available
+    if _gpu_available is None:
+        try:
+            import torch
+            _gpu_available = bool(torch.cuda.is_available())
+        except Exception:
+            _gpu_available = False
+    return _gpu_available
 
 
 def resolve_registry_entry(model_name: Optional[str] = None) -> tuple[str, Dict[str, str]]:

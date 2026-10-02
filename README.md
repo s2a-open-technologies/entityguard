@@ -274,33 +274,42 @@ Das `docker-compose.yml` bindet das `data/`-Verzeichnis als Volume ein. Die SQLi
 
 ### Transformer-Modelle (optionaler Qualitäts-Boost)
 
-EntityGuard unterstützt zwei Transformer-Modelle, die **parallel** zu spaCy +
-Regex-Patterns laufen und je über eine eigene Erkennungsregel-Zeile im
-Admin-UI an/ausgeschaltet werden (`backend/components/bert_recognizer.py`,
-`BERT_MODEL_REGISTRY`):
+EntityGuard unterstützt mehrere Transformer-Modelle, die **parallel** zu
+spaCy + Regex-Patterns laufen und je über einen An/Aus-Schalter auf der
+Admin-Seite **Modelle** (`/admin/modelle`) verwaltet werden
+(`backend/components/bert_recognizer.py`, `BERT_MODEL_REGISTRY`):
 
-| Erkennungsregel (Admin-UI) | Modell | Stärke | CPU | GPU |
+| Modell (Admin-UI) | HuggingFace | Stärke | CPU | GPU |
 |---|---|---|---|---|
-| `transformer_ner_fhswf` | `fhswf/bert_de_ner` (110M) | Freie Namen, Orte, **Organisationen** in Fließtext (65 % → 87 % Recall vs. spaCy allein) | ~89 ms | ~14–20 ms |
-| `transformer_pii_openmed` | `OpenMed-PII-German-SuperClinical-Small-44M-v1` (44M) | Strukturiertes PII als Sicherheitsnetz über den Regex-Patterns: Adressen, Geburtsdatum, IBAN, E-Mail, Telefon — auch in Format-Varianten, die Regex verpasst | ~99 ms | ~15 ms |
+| `transformer_ner_fhswf` | `fhswf/bert_de_ner` (110M) | Freie Namen, Orte, **Organisationen** in Fließtext (65 % → 87 % Recall vs. spaCy allein) | ~77 ms | ~14 ms |
+| `transformer_pii_openmed_small` | `OpenMed-PII-German-…-Small-44M` (44M) | Strukturiertes PII als Sicherheitsnetz über den Regex-Patterns: Adressen, Geburtsdatum, IBAN, E-Mail, Telefon | ~111 ms | ~18 ms |
+| `transformer_pii_openmed_base` | `OpenMed-PII-German-…-Base-184M` (184M) | wie Small, genauer (F1 0.963) | ~167 ms | ~27 ms |
+| `transformer_pii_openmed_large` | `OpenMed-PII-German-…-Large-434M` (434M) | genauste Variante (F1 0.976) | ~680 ms | ~45 ms |
 
-**Beide sind ab Werk deaktiviert** (Migrationen `010`/`011`), da spaCy +
-Patterns die Kernentitäten mit ~6 ms abdecken. Zum Aktivieren:
+Werte = Median über je 15 `process_text`-Aufrufe, 4 CPU-Kerne / RTX 3060;
+erzeugt mit `uv run python scripts/benchmark_all_models.py` (läuft jedes
+Modell als Subprozess, CPU + GPU, mit Warmup). Die beiden großen OpenMed-
+Modelle sind im Admin-UI mit **„GPU empfohlen"** markiert: ohne CUDA sind
+sie spürbar langsamer (Base ~3×, Large ~11× vs. GPU).
+
+**Alle Modelle sind ab Werk deaktiviert** (Migrationen `010`/`011`/`012`),
+da spaCy + Patterns die Kernentitäten mit ~6 ms abdecken. Zum Aktivieren:
 
 1. Admin-UI → **Modelle** → gewünschtes Modell → Einschalten (greift sofort,
    kein Neustart und kein separater Reload nötig)
 
-Beide Modelle gleichzeitig aktiv sind erlaubt (Latenzen addieren sich auf
-~190 ms CPU). Beim ersten aktivierten Request lädt der Analyzer jedes
-Modell einmalig (fhswf ~440 MB / ~4 s, OpenMed ~180 MB); danach bleiben sie
-für die Prozesslebensdauer im Speicher und überleben `/reload`.
+Mehrere Modelle gleichzeitig aktiv sind erlaubt (Latenzen addieren sich).
+Beim ersten aktivierten Request lädt der Analyzer jedes Modell einmalig
+(fhswf ~440 MB, OpenMed 44M ~180 MB, 184M ~730 MB, 434M ~1,7 GB); danach
+bleiben sie für die Prozesslebensdauer im Speicher und überleben `/reload`.
 
 Nicht gemappte Labels (z. B. SSN, AGE des OpenMed-Modells) werden verworfen.
 Neue Entitätstypen lassen sich ergänzen: Entität im Admin-UI anlegen und das
 Label in `BERT_MODEL_REGISTRY` nachtragen.
 
 Docker-Deployments haben typischerweise keine GPU; dort laufen aktivierte
-Modelle automatisch auf CPU.
+Modelle automatisch auf CPU - für die großen Varianten ist das nur mit
+entsprechender Latenz tolerierbar.
 
 ### Analyzer-Parameter (`backend/components/cstm_analyzer.py`)
 

@@ -22,22 +22,30 @@ section as the GitHub Release notes.
   Fensterhöhe (Eingabe/Ausgabe wachsen mit dem Fenster). Per Sidebar und
   Dashboard-Schnellzugriff erreichbar; die Seite bleibt öffentlich (kein
   Login), eingeloggte Admins sehen die Sidebar.
-- **Auswahlbarer Transformer-Modelle** — zwei Modelle, verwaltet über eine
+- **Auswahlbarer Transformer-Modelle** — vier Modelle, verwaltet über eine
   eigene Admin-Seite **Modelle** (`/admin/modelle`) mit einfachen An/Aus-
-  Schaltern (Migration `011`); Umschalten baut den Analyzer sofort neu
-  (kein Neustart, kein separater Reload):
+  Schaltern (Migrationen `011`/`012`); Umschalten baut den Analyzer sofort
+  neu (kein Neustart, kein separater Reload):
   - `transformer_ner_fhswf` (fhswf/bert_de_ner, 110M): freie Namen, Orte,
     Organisationen in Fließtext — 65 % → 87 % Recall vs. spaCy allein,
-    ~89 ms/CPU-Call, ~14–20 ms GPU
-  - `transformer_pii_openmed` (OpenMed PII German Small 44M): strukturiertes
+    ~77 ms/CPU-Call, ~14 ms GPU
+  - `transformer_pii_openmed_small` (OpenMed PII German 44M): strukturiertes
     PII als Sicherheitsnetz über den Regex-Patterns (Adressen, Geburtsdatum,
-    IBAN, E-Mail, Telefon), ~99 ms/CPU-Call
-  - Beide laufen parallel zu spaCy + Patterns; mehrere Modelle gleichzeitig
-    aktiv sind erlaubt. Beide standardmäßig inaktiv (spaCy + Patterns: ~6 ms).
+    IBAN, E-Mail, Telefon), ~111 ms/CPU-Call, ~18 ms GPU
+  - `transformer_pii_openmed_base` (184M, F1 0.963) und
+    `transformer_pii_openmed_large` (434M, F1 0.976): genauere Varianten mit
+    **„GPU empfohlen"**-Kennzeichnung; ohne CUDA ~167 ms bzw. ~680 ms/CPU-Call
+    (Large ~11× langsamer als auf GPU)
+  - Alle laufen parallel zu spaCy + Patterns; mehrere Modelle gleichzeitig
+    aktiv sind erlaubt. Alle standardmäßig inaktiv (spaCy + Patterns: ~6 ms).
     Die Modell-Zeilen sind absichtlich keine bearbeitbaren Erkennungsregeln:
     Modell und Entitäts-Zuordnung sind im Code definiert; die
     Erkennungsregeln-Liste blendet sie aus, Bearbeiten/Löschen leitet auf
     /admin/modelle weiter.
+  - Die Admin-Seite zeigt einen Live-CUDA-Status und je Modell ein
+    „GPU empfohlen"-Badge. `scripts/benchmark_all_models.py` erzeugt die
+    CPU/GPU-Latenztabelle für alle Registry-Modelle (Subprozess pro Lauf,
+    mit Warmup) und belegt damit die GPU-Empfehlung.
 - **ORGANIZATION-Entität** (Platzhalter `[ORGANISATION]`) — vorher wurden
   Organisationen-Treffer der Modelle still verworfen, weil die Entität
   fehlte.

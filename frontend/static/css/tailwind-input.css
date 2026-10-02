@@ -393,6 +393,10 @@
         @apply bg-slate-100 text-slate-500 border border-slate-200;
     }
 
+    .badge-warning {
+        @apply bg-amber-50 text-amber-700 border border-amber-300;
+    }
+
     /* Stats grid */
     .stats-grid {
         @apply grid gap-5 mb-8;
@@ -429,6 +433,10 @@
 
     .model-card-header {
         @apply flex items-start justify-between gap-3 mb-3;
+    }
+
+    .model-badges {
+        @apply flex flex-col items-end gap-1.5 shrink-0;
     }
 
     .model-title {

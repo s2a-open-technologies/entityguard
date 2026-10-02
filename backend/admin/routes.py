@@ -25,7 +25,7 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
-from backend.components.bert_recognizer import BERT_MODEL_REGISTRY
+from backend.components.bert_recognizer import BERT_MODEL_REGISTRY, gpu_available
 from backend.components.cstm_analyzer import CustomAnalyzer
 from backend.database import SessionLocal
 from backend.database.crud import (
@@ -799,22 +799,41 @@ async def delete_entity_submit(
 # ============================================================================
 
 # Human-readable descriptions for the model cards. Keys are the registry
-# keys (= recognizers.name DB rows) from BERT_MODEL_REGISTRY.
+# keys (= recognizers.name DB rows) from BERT_MODEL_REGISTRY. The latency
+# numbers come from scripts/benchmark_all_models.py (median, 4 CPU cores /
+# RTX 3060) - rerun it after changing the registry and update these.
 MODEL_DESCRIPTIONS = {
     "transformer_ner_fhswf": {
         "title": "Fließtext-NER (fhswf/bert_de_ner)",
         "description": (
             "Erkennt freie Namen, Orte und Organisationen im Fließtext - auch "
-            "ohne umgebende Schlüsselwörter. ~110M Parameter, ~89 ms/Aufruf "
-            "(CPU) bzw. ~14-20 ms (GPU)."
+            "ohne umgebende Schlüsselwörter. ~110M Parameter, ~77 ms/Aufruf "
+            "(CPU) bzw. ~14 ms (GPU)."
         ),
     },
-    "transformer_pii_openmed": {
-        "title": "PII-Sicherheitsnetz (OpenMed PII German 44M)",
+    "transformer_pii_openmed_small": {
+        "title": "PII-Sicherheitsnetz klein (OpenMed PII German 44M)",
         "description": (
             "Zweites Auge für strukturierte personenbezogene Daten: Adressen, "
             "Geburtsdatum, IBAN, E-Mail, Telefon - auch in Format-Varianten, "
-            "die die Regex-Muster verpassen. ~44M Parameter, ~99 ms/Aufruf (CPU)."
+            "die die Regex-Muster verpassen. ~44M Parameter, ~111 ms/Aufruf "
+            "(CPU) bzw. ~18 ms (GPU)."
+        ),
+    },
+    "transformer_pii_openmed_base": {
+        "title": "PII-Sicherheitsnetz mittel (OpenMed PII German 184M)",
+        "description": (
+            "Wie das kleine Modell, aber genauer (F1 0.963 statt ~0.95). "
+            "~184M Parameter, ~167 ms/Aufruf (CPU) bzw. ~27 ms (GPU) - "
+            "auf CPU spürbar langsamer, GPU empfohlen."
+        ),
+    },
+    "transformer_pii_openmed_large": {
+        "title": "PII-Sicherheitsnetz groß (OpenMed PII German 434M)",
+        "description": (
+            "Genaueste Variante (F1 0.976). ~434M Parameter, ~680 ms/Aufruf "
+            "(CPU) bzw. ~45 ms (GPU) - ohne GPU rund 11x langsamer, daher "
+            "nur mit CUDA-GPU sinnvoll."
         ),
     },
 }
@@ -837,8 +856,9 @@ async def list_models(request: Request, user: dict = Depends(require_auth)):
                 "model": entry["model"],
                 "is_active": bool(row.is_active) if row else False,
                 "entities": ", ".join(sorted(set(entry["mapping"].values()))),
+                "gpu_recommended": bool(entry.get("gpu_recommended")),
             })
-        context = get_template_context(request, models=models)
+        context = get_template_context(request, models=models, gpu_available=gpu_available())
         return templates.TemplateResponse("models/list.html", context)
     finally:
         db.close()
