@@ -22,96 +22,39 @@ from typing import Optional
 import bcrypt
 from sqlalchemy.orm import Session
 
-from .models import AdminUser, AllowedValueModel, ContextWordModel, EntityModel, PatternModel, RecognizerModel
-
-
-def get_recognizer(db: Session, recognizer_id: int) -> Optional[RecognizerModel]:
-    """Get a recognizer by ID."""
-    return db.query(RecognizerModel).filter(RecognizerModel.id == recognizer_id).first()
-
-
-def get_recognizer_by_name(db: Session, name: str) -> Optional[RecognizerModel]:
-    """Get a recognizer by name."""
-    return db.query(RecognizerModel).filter(RecognizerModel.name == name).first()
-
-
-def get_recognizers(db: Session, skip: int = 0, limit: int = 100, active_only: bool = False) -> list[RecognizerModel]:
-    """Get all recognizers, optionally filtering to active only."""
-    query = db.query(RecognizerModel)
-    if active_only:
-        query = query.filter(RecognizerModel.is_active == True)
-    return query.offset(skip).limit(limit).all()
-
-
-def create_recognizer(
-    db: Session,
-    name: str,
-    supported_entity: str,
-    supported_language: str = "de",
-    is_active: bool = True,
-    min_score: Optional[float] = None
-) -> RecognizerModel:
-    """Create a new recognizer."""
-    recognizer = RecognizerModel(
-        name=name,
-        supported_entity=supported_entity,
-        supported_language=supported_language,
-        is_active=is_active,
-        min_score=min_score
-    )
-    db.add(recognizer)
-    db.commit()
-    db.refresh(recognizer)
-    return recognizer
-
-
-def update_recognizer(
-    db: Session,
-    recognizer_id: int,
-    name: Optional[str] = None,
-    supported_entity: Optional[str] = None,
-    supported_language: Optional[str] = None,
-    is_active: Optional[bool] = None,
-    min_score: Optional[float] = None,
-    clear_min_score: bool = False
-) -> Optional[RecognizerModel]:
-    """Update a recognizer."""
-    recognizer = get_recognizer(db, recognizer_id)
-    if not recognizer:
-        return None
-
-    if name is not None:
-        recognizer.name = name
-    if supported_entity is not None:
-        recognizer.supported_entity = supported_entity
-    if supported_language is not None:
-        recognizer.supported_language = supported_language
-    if is_active is not None:
-        recognizer.is_active = is_active
-    if clear_min_score:
-        recognizer.min_score = None
-    elif min_score is not None:
-        recognizer.min_score = min_score
-
-    recognizer.updated_at = datetime.utcnow()
-    db.commit()
-    db.refresh(recognizer)
-    return recognizer
-
-
-def delete_recognizer(db: Session, recognizer_id: int) -> bool:
-    """Delete a recognizer and all its patterns/context words."""
-    recognizer = get_recognizer(db, recognizer_id)
-    if not recognizer:
-        return False
-
-    db.delete(recognizer)
-    db.commit()
-    return True
+from .models import AdminUser, AllowedValueModel, ContextWordModel, DetectorModel, EntityModel, PatternModel
 
 
 # ============================================================================
-# Pattern CRUD
+# Detector Model CRUD (transformer on/off switches)
+# ============================================================================
+
+def get_detector_models(db: Session) -> list[DetectorModel]:
+    """Get all detector model rows."""
+    return db.query(DetectorModel).all()
+
+
+def get_detector_model_by_name(db: Session, name: str) -> Optional[DetectorModel]:
+    """Get a detector model row by its registry key."""
+    return db.query(DetectorModel).filter(DetectorModel.name == name).first()
+
+
+def set_detector_model_active(db: Session, name: str, is_active: bool) -> Optional[DetectorModel]:
+    """Set a detector model's active flag, creating the row if missing."""
+    row = get_detector_model_by_name(db, name)
+    if not row:
+        row = DetectorModel(name=name, is_active=is_active)
+        db.add(row)
+    else:
+        row.is_active = is_active
+        row.updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+# ============================================================================
+# Pattern CRUD (scoped to an entity)
 # ============================================================================
 
 def get_pattern(db: Session, pattern_id: int) -> Optional[PatternModel]:
@@ -124,9 +67,9 @@ def get_pattern_by_name(db: Session, name: str) -> Optional[PatternModel]:
     return db.query(PatternModel).filter(PatternModel.name == name).first()
 
 
-def get_patterns_by_recognizer(db: Session, recognizer_id: int) -> list[PatternModel]:
-    """Get all patterns for a recognizer."""
-    return db.query(PatternModel).filter(PatternModel.recognizer_id == recognizer_id).all()
+def get_patterns_by_entity(db: Session, entity_id: int) -> list[PatternModel]:
+    """Get all patterns for an entity."""
+    return db.query(PatternModel).filter(PatternModel.entity_id == entity_id).all()
 
 
 def create_pattern(
@@ -134,14 +77,16 @@ def create_pattern(
     name: str,
     regex: str,
     score: float,
-    recognizer_id: int
+    entity_id: int,
+    keywords: Optional[str] = None
 ) -> PatternModel:
-    """Create a new pattern."""
+    """Create a new pattern for an entity."""
     pattern = PatternModel(
         name=name,
         regex=regex,
         score=score,
-        recognizer_id=recognizer_id
+        entity_id=entity_id,
+        keywords=keywords,
     )
     db.add(pattern)
     db.commit()
@@ -154,7 +99,8 @@ def update_pattern(
     pattern_id: int,
     name: Optional[str] = None,
     regex: Optional[str] = None,
-    score: Optional[float] = None
+    score: Optional[float] = None,
+    keywords: Optional[str] = None
 ) -> Optional[PatternModel]:
     """Update a pattern."""
     pattern = get_pattern(db, pattern_id)
@@ -167,6 +113,7 @@ def update_pattern(
         pattern.regex = regex
     if score is not None:
         pattern.score = score
+    pattern.keywords = keywords
 
     pattern.updated_at = datetime.utcnow()
     db.commit()
@@ -186,7 +133,7 @@ def delete_pattern(db: Session, pattern_id: int) -> bool:
 
 
 # ============================================================================
-# Context Word CRUD
+# Context Word CRUD (scoped to an entity)
 # ============================================================================
 
 def get_context_word(db: Session, context_word_id: int) -> Optional[ContextWordModel]:
@@ -194,14 +141,14 @@ def get_context_word(db: Session, context_word_id: int) -> Optional[ContextWordM
     return db.query(ContextWordModel).filter(ContextWordModel.id == context_word_id).first()
 
 
-def get_context_words_by_recognizer(db: Session, recognizer_id: int) -> list[ContextWordModel]:
-    """Get all context words for a recognizer."""
-    return db.query(ContextWordModel).filter(ContextWordModel.recognizer_id == recognizer_id).all()
+def get_context_words_by_entity(db: Session, entity_id: int) -> list[ContextWordModel]:
+    """Get all context words for an entity."""
+    return db.query(ContextWordModel).filter(ContextWordModel.entity_id == entity_id).all()
 
 
-def create_context_word(db: Session, word: str, recognizer_id: int) -> ContextWordModel:
-    """Create a new context word."""
-    context_word = ContextWordModel(word=word, recognizer_id=recognizer_id)
+def create_context_word(db: Session, word: str, entity_id: int) -> ContextWordModel:
+    """Create a new context word for an entity."""
+    context_word = ContextWordModel(word=word, entity_id=entity_id)
     db.add(context_word)
     db.commit()
     db.refresh(context_word)

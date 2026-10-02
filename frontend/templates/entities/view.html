@@ -1,0 +1,170 @@
+{% extends "base.html" %}
+
+{% block title %}{{ entity.name }}{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div class="breadcrumb">
+        <a href="/admin/entities">Entitäten</a> /
+        <span>{{ entity.name }}</span>
+    </div>
+    <h1>{{ entity.name }}</h1>
+    <div class="header-actions">
+        <a href="/admin/entities/{{ entity.id }}/edit" class="btn btn-secondary">Bearbeiten</a>
+        <form method="POST" action="/admin/entities/{{ entity.id }}/delete" class="inline-form" onsubmit="return confirm('Diese Entität wirklich löschen? Muster und Kontextwörter werden mitgelöscht.');">
+            <button type="submit" class="btn btn-danger">Löschen</button>
+        </form>
+    </div>
+</div>
+
+<div class="detail-grid">
+    <div class="detail-card">
+        <h3>Details</h3>
+        <dl class="detail-list">
+            <dt>Platzhalter</dt>
+            <dd><code>{{ entity.placeholder }}</code></dd>
+            <dt>Beschreibung</dt>
+            <dd>{{ entity.description or '–' }}</dd>
+            <dt>Status</dt>
+            <dd>
+                <span class="badge {% if entity.is_active %}badge-success{% else %}badge-secondary{% endif %}">
+                    {% if entity.is_active %}Aktiv{% else %}Inaktiv{% endif %}
+                </span>
+            </dd>
+        </dl>
+    </div>
+</div>
+
+<div class="section">
+    <h2>Muster ({{ patterns|length }})</h2>
+    <p class="help-text">
+        Muster erkennen konkrete Textstellen für diese Entität - entweder als <strong>Stichwörter</strong>
+        (einfach Begriffe eingeben, wir bauen den Ausdruck) oder als <strong>Regex</strong> für Fortgeschrittene.
+        Der Score (0.0–1.0) gibt die Erkennungssicherheit an.
+    </p>
+
+    <div class="pattern-add-tabs">
+        <button type="button" class="tab-btn active" data-tab="keyword">Stichwörter</button>
+        <button type="button" class="tab-btn" data-tab="regex">Regex</button>
+    </div>
+
+    <form method="POST" action="/admin/entities/{{ entity.id }}/patterns/create" class="form-inline" id="keyword-form">
+        <div class="form-group">
+            <input type="text" name="name" placeholder="Name des Musters" required>
+        </div>
+        <div class="form-group flex-grow">
+            <input type="text" id="keyword-input" name="keywords" placeholder="Begriffe, komma- oder zeilengetrennt, z. B. AOK, TK, Barmer">
+        </div>
+        <div class="form-group">
+            <input type="number" name="score" step="0.01" min="0" max="1" placeholder="Score" value="0.5" required>
+        </div>
+        <button type="submit" class="btn btn-primary btn-sm">Muster hinzufügen</button>
+        <input type="hidden" name="regex" value="">
+    </form>
+
+    <form method="POST" action="/admin/entities/{{ entity.id }}/patterns/create" class="form-inline" id="regex-form" style="display: none;">
+        <div class="form-group">
+            <input type="text" name="name" placeholder="Name des Musters" id="regex-name">
+        </div>
+        <div class="form-group flex-grow">
+            <input type="text" name="regex" placeholder="Regulärer Ausdruck, z. B. \b\d{5}\b">
+        </div>
+        <div class="form-group">
+            <input type="number" name="score" step="0.01" min="0" max="1" placeholder="Score" value="0.5">
+        </div>
+        <button type="submit" class="btn btn-primary btn-sm">Muster hinzufügen</button>
+    </form>
+
+    <div class="template-chips">
+        <span class="template-label">Vorlagen:</span>
+        {% for tpl in pattern_templates %}
+        <button type="button" class="chip" data-regex="{{ tpl.regex }}" data-name="{{ tpl.name }}" title="{{ tpl.description }}">{{ tpl.label }}</button>
+        {% endfor %}
+    </div>
+
+    {% if patterns %}
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Name</th>
+                <th>Muster</th>
+                <th>Score</th>
+                <th>Aktionen</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for pattern in patterns %}
+            <tr data-pattern-regex="{{ pattern.regex }}" class="pattern-row" title="Klicken, um dieses Muster in den Tester zu übernehmen">
+                <td><code>{{ pattern.name }}</code></td>
+                <td class="regex-cell">
+                    <code>{{ pattern.regex }}</code>
+                    {% if pattern.keywords %}<br><small>Stichwörter: {{ pattern.keywords }}</small>{% endif %}
+                </td>
+                <td>{{ pattern.score }}</td>
+                <td class="actions">
+                    <a href="/admin/patterns/{{ pattern.id }}/edit" class="btn btn-sm btn-secondary">Bearbeiten</a>
+                    <form method="POST" action="/admin/patterns/{{ pattern.id }}/delete" class="inline-form" onsubmit="return confirm('Dieses Muster wirklich löschen?');">
+                        <button type="submit" class="btn btn-sm btn-danger">Löschen</button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p class="empty-state">Noch keine Muster definiert. Fügen Sie über das Formular oben ein Muster hinzu.</p>
+    {% endif %}
+</div>
+
+<div class="section">
+    <h2>Kontextwörter ({{ context_words|length }})</h2>
+    <p class="help-text">
+        Wörter, die in der Nähe eines Treffers die Erkennung wahrscheinlicher machen (z. B. „Patient“, „Fall“, „Akte“).
+        Mehrere Wörter können mit Komma getrennt auf einmal hinzugefügt werden.
+    </p>
+
+    <form method="POST" action="/admin/entities/{{ entity.id }}/context/create" class="form-inline">
+        <div class="form-group flex-grow">
+            <input type="text" name="word" placeholder="Kontextwort (mehrere mit Komma trennen)" required>
+        </div>
+        <button type="submit" class="btn btn-primary btn-sm">Wort hinzufügen</button>
+    </form>
+
+    {% if context_words %}
+    <div class="tags">
+        {% for cw in context_words %}
+        <span class="tag">
+            {{ cw.word }}
+            <form method="POST" action="/admin/context/{{ cw.id }}/delete" class="inline-form">
+                <button type="submit" class="tag-remove">&times;</button>
+            </form>
+        </span>
+        {% endfor %}
+    </div>
+    {% else %}
+    <p class="empty-state">Noch keine Kontextwörter definiert.</p>
+    {% endif %}
+</div>
+
+<div class="section">
+    <h2>Muster testen</h2>
+    <p class="help-text">Testen Sie Ihre Muster an einem Beispieltext. Klicken Sie ein Muster oben an, um es direkt zu übernehmen.</p>
+
+    <div class="preview-form">
+        <div class="form-group">
+            <label for="preview-text">Testtext</label>
+            <textarea id="preview-text" rows="3" placeholder="Text zum Testen eingeben..."></textarea>
+        </div>
+        <div class="form-group">
+            <label for="preview-pattern">Muster (Regex)</label>
+            <input type="text" id="preview-pattern" placeholder="Regulären Ausdruck eingeben oder oben ein Muster wählen...">
+        </div>
+        <button type="button" id="preview-btn" class="btn btn-primary">Muster testen</button>
+    </div>
+
+    <div id="preview-results" class="preview-results" style="display: none;">
+        <h4 id="preview-summary">Treffer</h4>
+        <div id="preview-matches"></div>
+    </div>
+</div>
+{% endblock %}

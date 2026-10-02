@@ -3,12 +3,13 @@
  */
 
 document.addEventListener('DOMContentLoaded', function() {
-    // Pattern preview functionality
+    // Preview / regex tester
     const previewBtn = document.getElementById('preview-btn');
     const previewText = document.getElementById('preview-text');
     const previewPattern = document.getElementById('preview-pattern');
     const previewResults = document.getElementById('preview-results');
     const previewMatches = document.getElementById('preview-matches');
+    const previewSummary = document.getElementById('preview-summary');
 
     if (previewBtn) {
         previewBtn.addEventListener('click', async function() {
@@ -31,29 +32,77 @@ document.addEventListener('DOMContentLoaded', function() {
                 });
 
                 const result = await response.json();
+                previewResults.style.display = 'block';
 
                 if (result.success) {
+                    if (previewSummary) {
+                        previewSummary.textContent =
+                            result.matches.length === 1
+                                ? '1 Treffer'
+                                : result.matches.length + ' Treffer';
+                    }
                     if (result.matches.length === 0) {
-                        previewMatches.innerHTML = '<p style="color: #64748b;">Keine Treffer gefunden</p>';
+                        previewMatches.innerHTML =
+                            '<p style="color: #64748b;">Keine Treffer. Prüfen Sie Muster oder Testtext.</p>';
                     } else {
                         previewMatches.innerHTML = result.matches.map(m =>
                             `<div class="match-item">
-                                <strong>Treffer:</strong> "${escapeHtml(m.match)}"<br>
-                                <span style="color: #64748b;">Position: ${m.start}-${m.end}</span>
+                                <strong>„${escapeHtml(m.match)}“</strong>
+                                <span style="color: #64748b;"> (Position ${m.start}–${m.end})</span>
                             </div>`
                         ).join('');
                     }
-                    previewResults.style.display = 'block';
                 } else {
-                    previewMatches.innerHTML = `<p style="color: #dc2626;">Fehler: ${escapeHtml(result.error)}</p>`;
-                    previewResults.style.display = 'block';
+                    if (previewSummary) previewSummary.textContent = 'Fehler';
+                    previewMatches.innerHTML = `<p style="color: #dc2626;">Ungültiges Muster: ${escapeHtml(result.error)}</p>`;
                 }
             } catch (error) {
-                previewMatches.innerHTML = `<p style="color: #dc2626;">Fehler: ${escapeHtml(error.message)}</p>`;
                 previewResults.style.display = 'block';
+                if (previewSummary) previewSummary.textContent = 'Fehler';
+                previewMatches.innerHTML = `<p style="color: #dc2626;">Fehler: ${escapeHtml(error.message)}</p>`;
             }
         });
     }
+
+    // Keyword/Regex tabs on the entity detail page
+    const tabButtons = document.querySelectorAll('.pattern-add-tabs .tab-btn');
+    const keywordForm = document.getElementById('keyword-form');
+    const regexForm = document.getElementById('regex-form');
+
+    if (tabButtons.length && keywordForm && regexForm) {
+        tabButtons.forEach(btn => {
+            btn.addEventListener('click', function() {
+                tabButtons.forEach(b => b.classList.remove('active'));
+                this.classList.add('active');
+                const isKeyword = this.dataset.tab === 'keyword';
+                keywordForm.style.display = isKeyword ? 'flex' : 'none';
+                regexForm.style.display = isKeyword ? 'none' : 'flex';
+            });
+        });
+    }
+
+    // Regex template chips fill the regex form and switch to the regex tab
+    document.querySelectorAll('.template-chips .chip').forEach(chip => {
+        chip.addEventListener('click', function() {
+            if (!regexForm) return;
+            if (keywordForm) keywordForm.style.display = 'none';
+            if (regexForm) regexForm.style.display = 'flex';
+            tabButtons.forEach(b => b.classList.toggle('active', b.dataset.tab === 'regex'));
+            const nameInput = document.getElementById('regex-name');
+            const regexInput = regexForm.querySelector('input[name="regex"]');
+            if (regexInput) regexInput.value = this.dataset.regex || '';
+            if (nameInput && !nameInput.value) nameInput.value = this.dataset.name || 'muster';
+        });
+    });
+
+    // Clicking a pattern row fills the tester
+    document.querySelectorAll('.data-table tr[data-pattern-regex]').forEach(row => {
+        row.addEventListener('click', function(e) {
+            if (e.target.closest('a, button, form')) return;
+            if (previewPattern) previewPattern.value = this.dataset.patternRegex || '';
+            if (previewText) previewText.focus();
+        });
+    });
 
     // Auto-hide alerts after 5 seconds
     const alerts = document.querySelectorAll('.alert');

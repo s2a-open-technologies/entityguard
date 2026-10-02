@@ -58,7 +58,7 @@ Der Admin-Benutzer `admin` / `admin` wird durch `uv run alembic upgrade head` an
 ### Erster Test
 
 ```bash
-curl -s -X POST http://localhost:9500/api/v1/entityguard/sanitize \
+curl -s -X POST http://localhost:9500/api/v1/sanitize \
   -H "Content-Type: application/json" \
   -d '{"text": "Patient Max Mustermann, geb. 15.03.1980, behandelt in der Charité."}' \
   | python -m json.tool
@@ -107,7 +107,7 @@ Alle Patterns und Entitäten sind über das Admin-Interface konfigurierbar.
 
 ## API
 
-### `POST /api/v1/entityguard/sanitize`
+### `POST /api/v1/sanitize`
 
 Anonymisiert den übergebenen Text.
 
@@ -138,14 +138,14 @@ Jede maskierte Entität erhält einen eindeutigen, durchnummerierten Platzhalter
 
 ---
 
-### `POST /api/v1/entityguard/reload`
+### `POST /api/v1/reload`
 
 Lädt alle Patterns neu aus der Datenbank — ohne Neustart.
 
 Nach Änderungen im Admin-Interface diesen Endpoint aufrufen, um die neuen Patterns sofort zu aktivieren.
 
 ```bash
-curl -X POST http://localhost:9500/api/v1/entityguard/reload
+curl -X POST http://localhost:9500/api/v1/reload
 ```
 
 **Response:**
@@ -172,36 +172,37 @@ curl http://localhost:9500/health
 
 ## Admin-Interface
 
-Das Admin-Interface ermöglicht die Verwaltung von Pattern Recognizern zur Laufzeit.
+Das Admin-Interface verwaltet Entitäten, ihre Muster und optional zuschaltbare KI-Modelle zur Laufzeit.
 
 **URL:** `http://localhost:9500/admin/login`  
 **Standard-Login:** `admin` / `admin` — **Passwort nach dem ersten Login ändern!**
 
 ### Was du damit tun kannst
 
-- **Recognizer verwalten** — erstellen, bearbeiten, aktivieren/deaktivieren
-- **Patterns hinzufügen** — Regex mit Confidence-Score (0.0–1.0)
-- **Context Words** — Wörter, die den Erkennungs-Score boosten, wenn sie im Text in der Nähe stehen
-- **Live-Preview** — Regex testen bevor er aktiv wird
+- **Entitäten verwalten** — zentrale Einheit: Datentyp + Platzhalter, aktivieren/deaktivieren
+- **Muster hinzufügen** — als Stichwörter (einfach) oder Regex (fortgeschritten), mit Score (0.0–1.0)
+- **Kontextwörter** — Wörter, die den Erkennungs-Score boosten, wenn sie im Text in der Nähe stehen
+- **Muster-Tester** — Regex testen, bevor sie aktiv werden
+- **Modelle** — optionale Transformer-Modelle per Schalter zuschalten
 - **Passwort ändern** — unter Profil
 
-### Pattern-Reload nach Änderungen
+### Reload nach Änderungen
 
 Nach dem Speichern im Admin-Interface muss der Analyzer-Cache neu geladen werden:
 
 ```bash
-curl -X POST http://localhost:9500/api/v1/entityguard/reload
+curl -X POST http://localhost:9500/api/v1/reload
 ```
 
-Alternativ: Browser → `http://localhost:9500/admin` → Reload-Button.
+Das Umschalten von Modellen unter **Modelle** löst den Reload automatisch aus.
 
-### Neuen Recognizer anlegen
+### Neue Entität anlegen
 
-1. Admin-Interface öffnen → **Recognizers** → **Neu**
-2. Name und Entitätstyp vergeben (z.B. `MEDICAL_CONTEXT`)
-3. Regex-Pattern mit Score hinzufügen (Beispiel: `\b\d{5,}\b` mit Score `0.3`)
-4. Optional: Context Words, die den Score boosten (z.B. `patient`, `akte`, `fallnummer`)
-5. Speichern → Reload aufrufen
+1. Admin-Interface öffnen → **Entitäten** → **Entität erstellen**
+2. Name und Platzhalter vergeben (z.B. `PATIENT_ID` / `[PATIENT_ID]`)
+3. Auf der Detailseite **Muster hinzufügen** — Stichwörter (z.B. `AOK, TK, Barmer`) oder Regex (`\b\d{5,}\b`, Score `0.3`)
+4. Optional: Kontextwörter, die den Score boosten (z.B. `patient`, `akte`, `fallnummer`)
+5. **Muster testen** → Reload aufrufen
 
 **Faustregel für Confidence-Scores:**
 
@@ -227,9 +228,9 @@ Vollständige Anleitung inkl. Filter-Code, Konfiguration und Docker-Setup: **[do
 
 | Szenario | `api_url` |
 |----------|-----------|
-| Lokal (kein Docker) | `http://localhost:9500/api/v1/entityguard/sanitize` |
-| Docker, gleiches Netzwerk | `http://entityguard:9500/api/v1/entityguard/sanitize` |
-| Docker, anderes Netzwerk | `http://host.docker.internal:9500/api/v1/entityguard/sanitize` |
+| Lokal (kein Docker) | `http://localhost:9500/api/v1/sanitize` |
+| Docker, gleiches Netzwerk | `http://entityguard:9500/api/v1/sanitize` |
+| Docker, anderes Netzwerk | `http://host.docker.internal:9500/api/v1/sanitize` |
 
 ---
 
@@ -325,7 +326,7 @@ entsprechender Latenz tolerierbar.
 ```
 main.py                          FastAPI App Factory, Uvicorn Port 9500
 │
-├── backend/views/anonymizer.py  Router: /api/v1/entityguard/*
+├── backend/views/anonymizer.py  Router: /api/v1/*
 │   └── _analyzer                Gecachter CustomAnalyzer (Singleton)
 │
 ├── backend/components/
@@ -333,7 +334,7 @@ main.py                          FastAPI App Factory, Uvicorn Port 9500
 │                                DatabasePatternProvider (DB → PatternRecognizer)
 │
 ├── backend/database/
-│   ├── models.py                RecognizerModel, PatternModel, EntityModel, AdminUser
+│   ├── models.py                EntityModel, PatternModel, ContextWordModel, DetectorModel, AdminUser
 │   ├── crud.py                  CRUD-Operationen
 │
 ├── backend/admin/               Admin-UI-Routen (Jinja2, Session-Auth)
@@ -353,9 +354,9 @@ Nutzer-Nachricht
       ▼
 OpenWebUI inlet() Filter
       │
-      ▼  POST /api/v1/entityguard/sanitize
+      ▼  POST /api/v1/sanitize
 CustomAnalyzer.process_text()
-      ├── analyzer.analyze()     → Entitäten erkennen (spaCy + custom Patterns)
+      ├── analyzer.analyze()     → Entitäten erkennen (spaCy + Muster je Entität + optionale Modelle)
       └── anonymizer.anonymize() → Platzhalter einsetzen (aus DB)
       │
       ▼
@@ -399,7 +400,7 @@ uv run python -m spacy download de_core_news_lg
 
 **Datenbank nicht initialisiert**
 ```
-OperationalError: no such table: recognizers
+OperationalError: no such table: entities
 ```
 ```bash
 uv run alembic upgrade head
@@ -408,7 +409,7 @@ uv run alembic upgrade head
 **Neue Patterns werden nicht erkannt**  
 Nach Änderungen im Admin-Interface den Analyzer-Cache neu laden:
 ```bash
-curl -X POST http://localhost:9500/api/v1/entityguard/reload
+curl -X POST http://localhost:9500/api/v1/reload
 ```
 
 **Container startet, aber kein Health-Check**  

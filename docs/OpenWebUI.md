@@ -44,7 +44,7 @@ class Filter:
             timeout (int): Timeout in seconds for the API request.
         """
         api_url: str = Field(
-            default="http://localhost:9500/api/v1/entityguard/sanitize",
+            default="http://localhost:9500/api/v1/sanitize",
             description="EntityGuard API URL"
         )
         timeout: int = Field(
@@ -152,7 +152,7 @@ Der Filter wird auf **alle Chat-Anfragen** angewendet, unabhängig vom verwendet
 
    | Einstellung | Beschreibung | Empfohlener Wert (Docker) |
    |-------------|--------------|---------------------------|
-   | `api_url` | URL des EntityGuard-Dienstes | `http://host.docker.internal:9500/api/v1/entityguard/sanitize` |
+   | `api_url` | URL des EntityGuard-Dienstes | `http://host.docker.internal:9500/api/v1/sanitize` |
    | `timeout` | Timeout in Sekunden | `5` |
 
 6. Klicke auf **Save**
@@ -161,9 +161,9 @@ Der Filter wird auf **alle Chat-Anfragen** angewendet, unabhängig vom verwendet
 
 | Szenario | `api_url` |
 |----------|-----------|
-| OpenWebUI läuft **lokal** (nicht in Docker) | `http://localhost:9500/api/v1/entityguard/sanitize` |
-| OpenWebUI läuft **in Docker** (gleiches Netzwerk) | `http://entityguard:9500/api/v1/entityguard/sanitize` |
-| OpenWebUI läuft **in Docker** (anderes Netzwerk) | `http://host.docker.internal:9500/api/v1/entityguard/sanitize` |
+| OpenWebUI läuft **lokal** (nicht in Docker) | `http://localhost:9500/api/v1/sanitize` |
+| OpenWebUI läuft **in Docker** (gleiches Netzwerk) | `http://entityguard:9500/api/v1/sanitize` |
+| OpenWebUI läuft **in Docker** (anderes Netzwerk) | `http://host.docker.internal:9500/api/v1/sanitize` |
 
 ---
 
@@ -181,7 +181,7 @@ Der Filter wird **nur für bestimmte Modelle** angewendet. Dies ist nützlich, w
 6. Konfiguriere die **Valves** für dieses Modell:
 
    ```
-    api_url: http://host.docker.internal:9500/api/v1/entityguard/sanitize
+    api_url: http://host.docker.internal:9500/api/v1/sanitize
    timeout: 5
    ```
 
@@ -238,7 +238,7 @@ networks:
 
 **Filter-Konfiguration in OpenWebUI:**
 
-- `api_url`: `http://entityguard:9500/api/v1/entityguard/sanitize`
+- `api_url`: `http://entityguard:9500/api/v1/sanitize`
 - `timeout`: `5`
 
 ---
@@ -261,7 +261,7 @@ networks:
 - Erhöhe ggf. das `timeout` auf `10` Sekunden
 - Teste den Endpoint manuell:
   ```bash
-  curl -X POST http://localhost:9500/api/v1/entityguard/sanitize \
+  curl -X POST http://localhost:9500/api/v1/sanitize \
     -H "Content-Type: application/json" \
     -d '{"text": "Test"}'
   ```

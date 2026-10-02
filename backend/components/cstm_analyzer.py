@@ -29,8 +29,8 @@ from backend.components.bert_recognizer import (
     BertNerRecognizer,
     resolve_registry_entry,
 )
-from backend.database.crud import get_allowed_values, get_entities, get_recognizers
-from backend.database.models import RecognizerModel
+from backend.database.crud import get_allowed_values, get_detector_models, get_entities
+from backend.database.models import DetectorModel
 
 # Logger
 logger = logging.getLogger("uvicorn.error")
@@ -47,9 +47,9 @@ nlp_configuration = {
 # Module-level cache: transformer models are expensive to load, so each
 # instance must survive across CustomAnalyzer re-instantiations (e.g. every
 # /reload call creates a brand new CustomAnalyzer). Keyed by the registry
-# key (= recognizers.name DB row). Enablement is controlled per model by
-# its DB row (toggleable via the admin UI, all seeded inactive by
-# migration 010/011); a model itself is only ever loaded on first use.
+# key (= detector_models.name DB row). Enablement is controlled per model by
+# its DB row (toggleable via /admin/modelle, all seeded inactive); a model
+# itself is only ever loaded on first use.
 _bert_recognizers: dict[str, BertNerRecognizer] = {}
 
 
@@ -57,53 +57,42 @@ def _get_bert_recognizers(db: Optional[Session]) -> List[BertNerRecognizer]:
     """
     Lazily create and cache one BertNerRecognizer per enabled registry model.
 
-    Iterate over BERT_MODEL_REGISTRY (key = recognizers.name DB row) and
-    return the recognizers whose DB row is active. Context words and
-    min_score are sourced from each row (toggleable via the admin UI).
-    Falls back to the BERT_NER_ENABLED env var when no DB session/rows are
-    available (e.g. the benchmark script); in that fallback mode a
-    BERT_NER_MODEL env var selects the model, defaulting to
-    transformer_ner_fhswf. The underlying models are only ever loaded
-    once; on later calls (e.g. after /reload), only `.context`/
-    `.min_score` on the cached instances are refreshed from the DB, not
-    the models themselves.
+    Iterate over BERT_MODEL_REGISTRY (key = detector_models.name DB row) and
+    return the recognizers whose DB row is active. Falls back to the
+    BERT_NER_ENABLED env var when no DB session/rows are available (e.g. the
+    benchmark script); in that fallback mode a BERT_NER_MODEL env var selects
+    the model, defaulting to transformer_ner_fhswf. The underlying models are
+    only ever loaded once; on later calls (e.g. after /reload) the cached
+    instances are reused.
     """
-    rows: dict[str, RecognizerModel] = {}
+    active_keys: set[str] = set()
     if db is not None:
         try:
-            for row in get_recognizers(db, active_only=True):
-                if row.name in BERT_MODEL_REGISTRY:
-                    rows[row.name] = row
+            active_keys = {
+                row.name for row in get_detector_models(db) if row.is_active
+            }
         except Exception as e:
-            logger.warning(f"Could not read transformer recognizer rows from DB: {e}")
+            logger.warning(f"Could not read detector model rows from DB: {e}")
 
     enabled_keys: List[str] = []
-    if rows:
-        enabled_keys = list(rows.keys())
+    if active_keys:
+        enabled_keys = [k for k in BERT_MODEL_REGISTRY if k in active_keys]
     elif db is None and os.getenv("BERT_NER_ENABLED", "false").lower() in ("1", "true", "yes"):
         # No DB available (benchmark script path): env vars decide.
         try:
             enabled_keys = [resolve_registry_entry()[0]]
         except ValueError as e:
-            logger.error(f"BERT NER disabled: {e}")
+            logger.error(f"Transformer model disabled: {e}")
 
     recognizers: List[BertNerRecognizer] = []
     for key in enabled_keys:
-        context_words = [cw.word for cw in rows[key].context_words] if rows else []
-        min_score = rows[key].min_score if rows else None
-
         if key not in _bert_recognizers:
             entry = BERT_MODEL_REGISTRY[key]
             _bert_recognizers[key] = BertNerRecognizer(
                 name=key,
                 model_name=str(entry["model"]),
                 label_mapping=dict(entry["mapping"]),
-                context=context_words,
-                min_score=min_score,
             )
-        else:
-            _bert_recognizers[key].context = context_words
-            _bert_recognizers[key].min_score = min_score
 
         recognizers.append(_bert_recognizers[key])
 
@@ -134,59 +123,52 @@ class DatabasePatternProvider:
     """
     Provider for pattern recognizers loaded from the database.
 
-    This class provides methods to create PatternRecognizer instances
-    from database-stored pattern configurations.
+    Each *entity* becomes a single Presidio PatternRecognizer that owns all
+    of the entity's patterns and context words (the old separate recognizer
+    layer was removed - patterns/context now hang directly off entities).
     """
 
     @staticmethod
     def get_recognizers_from_db(db: Session) -> List[PatternRecognizer]:
         """
-        Load pattern recognizers from the database.
+        Load one PatternRecognizer per active entity that has patterns.
 
         Args:
             db: SQLAlchemy database session.
 
         Returns:
-            List[PatternRecognizer]: List of PatternRecognizer instances
-                created from active database recognizers.
+            List[PatternRecognizer]: One recognizer per entity, or an empty
+                list for entities without patterns.
         """
         recognizers = []
-        db_recognizers = get_recognizers(db, active_only=True)
-
-        for db_rec in db_recognizers:
-            # Skip builtin recognizers - Presidio loads them automatically
-            if db_rec.is_builtin:
-                continue
-
-            # Create patterns from database (custom recognizers only)
+        for entity in get_entities(db, active_only=True):
             patterns = []
-            for db_pattern in db_rec.patterns:
+            for db_pattern in entity.patterns:
                 try:
-                    pattern = Pattern(
+                    patterns.append(Pattern(
                         name=db_pattern.name,
                         regex=db_pattern.regex,
-                        score=db_pattern.score
-                    )
-                    patterns.append(pattern)
+                        score=db_pattern.score,
+                    ))
                 except Exception as e:
                     logger.warning(f"Invalid pattern '{db_pattern.name}': {e}")
                     continue
 
-            # Get context words
-            context_words = [cw.word for cw in db_rec.context_words]
+            if not patterns:
+                continue
 
-            # Create recognizer
+            context_words = [cw.word for cw in entity.context_words]
             try:
                 recognizer = PatternRecognizer(
-                    supported_entity=db_rec.supported_entity,
+                    supported_entity=entity.name,
                     patterns=patterns,
                     context=context_words if context_words else [],
-                    supported_language=db_rec.supported_language
+                    supported_language="de",
                 )
                 recognizers.append(recognizer)
-                logger.debug(f"Loaded recognizer '{db_rec.name}' from database")
+                logger.debug(f"Loaded recognizer for entity '{entity.name}' from database")
             except Exception as e:
-                logger.error(f"Error creating recognizer '{db_rec.name}': {e}")
+                logger.error(f"Error creating recognizer for entity '{entity.name}': {e}")
 
         return recognizers
 

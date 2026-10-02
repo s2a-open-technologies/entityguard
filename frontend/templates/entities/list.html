@@ -9,10 +9,9 @@
 </div>
 
 <p class="help-text">
-    Entitäten definieren die Arten sensibler Daten, die erkannt werden können (z. B. Patienten-IDs oder Namen). Jede
-    Entität hat einen Namen (intern verwendet) und einen Platzhalter (ersetzt den erkannten Wert im anonymisierten
-    Text). Entitäten werden beim Erstellen von Erkennungsregeln ausgewählt. Mehr dazu in der
-    <a href="/admin/howto">Anleitung</a>.
+    Eine Entität ist die zentrale Einheit: Sie legt fest, welche Art sensibler Daten erkannt wird und wie sie im
+    anonymisierten Text ersetzt wird. Muster (Regex oder Stichwörter) und Kontextwörter hängen direkt an der
+    Entität und werden auf ihrer Detailseite verwaltet. Mehr dazu in der <a href="/admin/howto">Anleitung</a>.
 </p>
 
 {% if entities %}
@@ -21,6 +20,7 @@
         <tr>
             <th>Name</th>
             <th>Platzhalter</th>
+            <th>Muster</th>
             <th>Beschreibung</th>
             <th>Status</th>
             <th>Aktionen</th>
@@ -29,8 +29,11 @@
     <tbody>
         {% for entity in entities %}
         <tr>
-            <td><code>{{ entity.name }}</code></td>
+            <td>
+                <a href="/admin/entities/{{ entity.id }}"><strong>{{ entity.name }}</strong></a>
+            </td>
             <td><code>{{ entity.placeholder }}</code></td>
+            <td>{{ pattern_counts.get(entity.id, 0) }}</td>
             <td>{{ entity.description or '-' }}</td>
             <td>
                 <span class="badge {% if entity.is_active %}badge-success{% else %}badge-secondary{% endif %}">
@@ -38,6 +41,7 @@
                 </span>
             </td>
             <td class="actions">
+                <a href="/admin/entities/{{ entity.id }}" class="btn btn-secondary btn-sm">Ansehen</a>
                 <a href="/admin/entities/{{ entity.id }}/edit" class="btn btn-secondary btn-sm">Bearbeiten</a>
                 <form method="POST" action="/admin/entities/{{ entity.id }}/delete" class="inline-form" onsubmit="return confirm('Diese Entität wirklich löschen?')">
                     <button type="submit" class="btn btn-danger btn-sm">Löschen</button>

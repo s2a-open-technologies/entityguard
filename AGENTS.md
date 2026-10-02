@@ -7,7 +7,7 @@ Compact operational guidance for OpenCode sessions. If a fact is obvious from fi
 - **Project name:** EntityGuard.
 - Single FastAPI service with an HTML admin UI and one JSON API namespace. All user-facing strings (UI, docs) are **German**.
 - Runtime depends on a German spaCy model (`de_core_news_lg`) and a seeded SQLite database.
-- All recognizers/entities are stored in `data/entityguard.db`; the API analyzer is a lazily-created singleton rebuilt on `/reload`. Alembic migrations seed the canonical initial data.
+- All entities, patterns and context words are stored in `data/entityguard.db`; the API analyzer is a lazily-created singleton rebuilt on `/reload`. Alembic migrations seed the canonical initial data.
 
 ## Toolchain
 
@@ -42,16 +42,16 @@ Service listens on `http://localhost:9500` (`main.py` hardcodes port `9500`).
 - Alembic URL: `sqlite:///data/entityguard.db` (configured in `alembic.ini`).
 - `data/` is gitignored but mounted as a volume in Docker Compose, so the DB persists across `docker-compose down`. Local DB state is dev-only — migrations are the only canonical source; never document "just update the DB".
 - `main.py` does not initialize or seed the database on startup. **You must run `uv run alembic upgrade head` before starting the app.**
-- Alembic migrations are the exclusive source of schema, default entities/recognizers, and the default admin user.
+- Alembic migrations are the exclusive source of schema, default entities/patterns, and the default admin user.
 - The default admin user is created by migration `004_seed_default_admin_user.py` (idempotent: only if `admin_users` is empty).
-- New migration: `uv run alembic revision --autogenerate -m "description"`, then `uv run alembic upgrade head`. Migration files are numbered `00N_description.py` with plain string revisions (`revision = '011'`).
-- The `is_builtin` column on `recognizers` exists; non-builtin DB recognizers are loaded at runtime, while Presidio’s own built-ins are mostly removed except `spacy_nlp`.
+- New migration: `uv run alembic revision --autogenerate -m "description"`, then `uv run alembic upgrade head`. Migration files are numbered `00N_description.py` with plain string revisions (`revision = '013'`).
+- Data model (since migration `013`): **`entities` is the central unit**. `patterns` and `context_words` reference it directly via `entity_id`; the old `recognizers` layer (and its inert `spacy_*`/`builtin_*` placeholder rows) no longer exists. Migrations before `013` still create/read `recognizers` — they are historical; don't edit them.
 
 ## Key Entrypoints
 
 - `main.py` — FastAPI factory, Uvicorn runner. No runtime DB seeding.
-- `backend/views/anonymizer.py` — API router `/api/v1/entityguard/*` and the cached singleton analyzer (`_analyzer`).
-- `backend/components/cstm_analyzer.py` — `CustomAnalyzer` (Presidio + spaCy + DB patterns).
+- `backend/views/anonymizer.py` — API router `/api/v1/*` and the cached singleton analyzer (`_analyzer`).
+- `backend/components/cstm_analyzer.py` — `CustomAnalyzer` (Presidio + spaCy + per-entity patterns).
 - `backend/admin/routes.py` — HTML admin UI under `/admin/*`; `GET /` redirects to `/admin/dashboard` if authenticated, otherwise to `/admin/login`.
 - `backend/database/` — SQLAlchemy models, CRUD, seeding.
 - `frontend/templates/` + `frontend/static/` — Jinja2 templates and CSS/JS assets (served at `/static`).
@@ -60,22 +60,26 @@ Service listens on `http://localhost:9500` (`main.py` hardcodes port `9500`).
 
 ## API / Runtime Gotchas
 
-- `/api/v1/entityguard/sanitize` returns HTTP 500 on any processing error (fail-closed). It never returns raw text on failure.
-- `/api/v1/entityguard/reload` rebuilds the singleton analyzer from the DB. Call this after editing patterns in the admin UI; otherwise edits are not reflected. The model toggles on `/admin/modelle` trigger the rebuild themselves.
+- `/api/v1/sanitize` returns HTTP 500 on any processing error (fail-closed). It never returns raw text on failure.
+- `/api/v1/reload` rebuilds the singleton analyzer from the DB. Call this after editing patterns in the admin UI; otherwise edits are not reflected. The model toggles on `/admin/modelle` trigger the rebuild themselves.
+- The API namespace is `/api/v1/*` (e.g. `/api/v1/sanitize`), **not** `/api/v1/entityguard/*` — that path does not exist despite appearing in some older docs.
 - Admin UI login: `admin` / `admin`. Change the password immediately in production.
-- `/api/v1/entityguard/sanitize` returns `sanitized_text` plus a `mapping` (placeholder -> original value) for every masked entity occurrence. Placeholders are uniquely indexed per occurrence (e.g. `[EMAIL_1]`, `[EMAIL_2]`), not just per entity type.
-- Placeholders come from the `entities` table; if an entity is inactive, it will not be passed to Presidio for analysis. The `DEFAULT` operator maps to `[SENSITIV]`. A hit for an entity that has no DB row is silently dropped — e.g. ORGANIZATION hits were lost before migration `011` seeded the entity.
-- Transformer models (`backend/components/bert_recognizer.py`) are **inactive by default** (migrations `010`/`011`/`012`). Selectable via `BERT_MODEL_REGISTRY` (key = `recognizers.name` DB row): `transformer_ner_fhswf` (fhswf/bert_de_ner), `transformer_pii_openmed_small` (44M), `_base` (184M), `_large` (434M). The OpenMed sizes share one label mapping (`OPENMED_PII_GERMAN_MAPPING`) and differ only in accuracy/speed; base+large carry `gpu_recommended=True`. Managed on `/admin/modelle` (on/off switches with a live CUDA status and "GPU empfohlen" badge, immediate analyzer rebuild - not editable recognizer rows; the recognizer list hides these rows and edit/delete routes redirect to /admin/modelle). Models load lazily on first use and are cached module-level (survive `/reload`). Latencies add up when several are active.
+- `/api/v1/sanitize` returns `sanitized_text` plus a `mapping` (placeholder -> original value) for every masked entity occurrence. Placeholders are uniquely indexed per occurrence (e.g. `[EMAIL_1]`, `[EMAIL_2]`), not just per entity type.
+- Placeholders come from the `entities` table; if an entity is inactive (or has no DB row), its hits are silently dropped. The `DEFAULT` operator maps to `[SENSITIV]`.
+- One Presidio `PatternRecognizer` is built per entity that has patterns (entity name == supported_entity); a recognizer's context words come from the entity's `context_words`.
+- Transformer models (`backend/components/bert_recognizer.py`) are **inactive by default**. Toggle state lives in the `detector_models` table (key = `name`, matches `BERT_MODEL_REGISTRY`); managed on `/admin/modelle` (on/off switches with a live CUDA status and "GPU empfohlen" badge, immediate analyzer rebuild). Registry: `transformer_ner_fhswf` (fhswf/bert_de_ner), `transformer_pii_openmed_small` (44M), `_base` (184M), `_large` (434M) — the OpenMed sizes share `OPENMED_PII_GERMAN_MAPPING` and differ only in accuracy/speed; base+large carry `gpu_recommended=True`. Models load lazily on first use and are cached module-level (survive `/reload`). Latencies add up when several are active.
 - `scripts/benchmark_all_models.py` is the source of the CPU/GPU latency numbers quoted in README, AGENTS and the admin model descriptions. Rerun it after changing the registry and update those numbers.
-- `recognizers.name` for transformer rows is a **code contract** — renaming a row in the DB orphans the model. The admin routes already guard this; don't bypass it.
+- `detector_models.name` matches a `BERT_MODEL_REGISTRY` key (code contract) — renaming it orphans the model.
 - `BERT_NER_DEVICE` must be a string device spec - transformers >= 4.5x rejects integer devices (`-1` used to mean CPU; now use `cpu`).
 
-## Editing Patterns / Entities
+## Editing Entities / Patterns
 
-- Add/edit recognizers, patterns, context words, and entities via `/admin` in a browser.
-- After saving, either click the reload button in the UI or `POST /api/v1/entityguard/reload` to activate changes.
+- Add/edit entities, their patterns and context words via `/admin` (entity detail page) in a browser.
+- Patterns can be entered as a **keyword list** (comma/newline separated -> auto-built word-boundary regex, `build_keyword_regex()` in `backend/admin/routes.py`) or as a raw regex; the keyword list is preserved in `patterns.keywords` for round-tripping.
+- The `/admin/preview` endpoint and the "Muster testen" box test raw regexes; `PATTERN_TEMPLATES` in `routes.py` powers the one-click chips.
+- After saving, either click the reload button in the UI or `POST /api/v1/reload` to activate changes (model toggles reload automatically).
 - Regex is validated server-side before persistence.
-- Recognizer and entity names are unique.
+- Entity and pattern names are unique.
 
 ## Testing
 
@@ -109,12 +113,12 @@ npm run build:css                  # rebuild admin.css after CSS changes
 curl http://localhost:9500/health
 
 # sanitize
-curl -s -X POST http://localhost:9500/api/v1/entityguard/sanitize \
+curl -s -X POST http://localhost:9500/api/v1/sanitize \
   -H "Content-Type: application/json" \
   -d '{"text": "Patient Max Mustermann, geb. 15.03.1980, AOK-versichert, Fallnr. 48291"}'
 
 # reload patterns after admin changes
-curl -X POST http://localhost:9500/api/v1/entityguard/reload
+curl -X POST http://localhost:9500/api/v1/reload
 ```
 
 ## References

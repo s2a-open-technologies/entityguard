@@ -29,12 +29,12 @@ from backend.components.bert_recognizer import BERT_MODEL_REGISTRY, gpu_availabl
 from backend.components.cstm_analyzer import CustomAnalyzer
 from backend.database import SessionLocal
 from backend.database.crud import (
-    create_allowed_value, create_context_word, create_entity, create_pattern, create_recognizer,
-    delete_allowed_value, delete_context_word, delete_entity, delete_pattern, delete_recognizer,
-    get_admin_user, get_allowed_values, get_allowed_value_by_value, get_entities, get_entity, get_entity_by_name, get_pattern,
-    get_pattern_by_name, get_recognizer, get_recognizer_by_name, get_recognizers, get_context_word,
-    get_context_words_by_recognizer, get_patterns_by_recognizer,
-    update_admin_password, update_entity, update_pattern, update_recognizer, verify_password,
+    create_allowed_value, create_context_word, create_entity, create_pattern,
+    delete_allowed_value, delete_context_word, delete_entity, delete_pattern,
+    get_admin_user, get_allowed_values, get_allowed_value_by_value, get_context_word,
+    get_context_words_by_entity, get_entities, get_entity, get_entity_by_name, get_pattern,
+    get_pattern_by_name, get_patterns_by_entity, set_detector_model_active,
+    update_admin_password, update_entity, update_pattern, verify_password,
 )
 
 from .auth import authenticate_user, create_session, delete_session, require_auth, SESSION_COOKIE_NAME
@@ -49,6 +49,57 @@ logger = logging.getLogger("uvicorn.error")
 # Templates
 TEMPLATES_DIR = Path(__file__).resolve().parents[2] / "frontend" / "templates"
 templates = Jinja2Templates(directory=TEMPLATES_DIR)
+
+
+def build_keyword_regex(raw_keywords: str) -> str:
+    """Turn a comma/newline separated keyword list into a word-boundary regex.
+
+    Lets admins add simple term lists (e.g. "AOK, TK, Barmer") without
+    writing regex; the result is stored as a normal pattern.
+
+    Args:
+        raw_keywords: Comma or newline separated terms.
+
+    Returns:
+        A case-insensitive regex matching any whole term.
+    """
+    terms = [t.strip() for t in re.split(r"[,\n;]+", raw_keywords) if t.strip()]
+    escaped = [re.escape(t) for t in terms]
+    return r"(?i)\b(" + "|".join(escaped) + r")\b"
+
+
+def _validate_pattern(db, name: str, regex: str, ignore_id: int | None = None) -> str | None:
+    """Validate a pattern's name uniqueness and regex syntax."""
+    if not name.strip():
+        return "Ein Name ist erforderlich"
+    if not regex.strip():
+        return "Ein Muster (Regex oder Stichwörter) ist erforderlich"
+    try:
+        re.compile(regex)
+    except re.error as e:
+        return f"Ungültiger regulärer Ausdruck: {e}"
+    existing = get_pattern_by_name(db, name)
+    if existing and existing.id != ignore_id:
+        return f"Ein Muster mit dem Namen '{name}' existiert bereits"
+    return None
+
+
+# Regex templates offered as one-click chips on the entity detail page.
+PATTERN_TEMPLATES = [
+    {"label": "Telefon DE", "name": "telefon", "regex": r"(?:\+49|0)[\s/-]?\d{2,5}[\s/-]?\d{3,9}",
+     "description": "Deutsche Telefonnummern"},
+    {"label": "IBAN", "name": "iban", "regex": r"\bDE\d{2}(?:\s?\d{4}){4}\s?\d{2}\b",
+     "description": "Deutsche IBAN"},
+    {"label": "Datum", "name": "datum", "regex": r"\b\d{1,2}\.\d{1,2}\.\d{2,4}\b",
+     "description": "Datum im Format TT.MM.JJJJ"},
+    {"label": "PLZ", "name": "plz", "regex": r"\b\d{5}\b",
+     "description": "Fünfstellige Postleitzahl"},
+    {"label": "E-Mail", "name": "email", "regex": r"[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+",
+     "description": "E-Mail-Adresse"},
+    {"label": "Straße + PLZ Ort", "name": "adresse",
+     "regex": r"(?:[A-ZÄÖÜ][a-zäöüß]+[- ]?){1,3}(?:straße|str\.?|weg|allee|platz|ring|damm|gasse)\s+\d{1,4}[a-zA-Z]?,?\s*\d{5}\s+[A-ZÄÖÜ][a-zA-ZäöüÄÖÜß\-]+",
+     "description": "Straße Hausnummer, PLZ Ort"},
+]
 
 
 @admin_router.get("/login", response_class=HTMLResponse)
@@ -105,12 +156,12 @@ async def dashboard(request: Request, user: dict = Depends(require_auth)):
     """Render the admin dashboard."""
     db = SessionLocal()
     try:
-        recognizers = get_recognizers(db)
-        active_count = sum(1 for r in recognizers if r.is_active)
-        total_patterns = sum(len(r.patterns) for r in recognizers)
+        entities = get_entities(db)
+        active_count = sum(1 for e in entities if e.is_active)
+        total_patterns = sum(len(e.patterns) for e in entities)
         context = get_template_context(
             request,
-            recognizers=recognizers,
+            entities=entities,
             active_count=active_count,
             total_patterns=total_patterns
         )
@@ -133,389 +184,30 @@ async def howto_page(request: Request, user: dict = Depends(require_auth)):
 
 
 # ============================================================================
-# Recognizers
+# Preview (regex tester, shared by entity detail + pattern edit)
 # ============================================================================
 
-@admin_router.get("/recognizers", response_class=HTMLResponse)
-async def list_recognizers(request: Request, user: dict = Depends(require_auth)):
-    """Render the list of recognizers (excluding transformer model rows)."""
-    db = SessionLocal()
-    try:
-        # Transformer models are managed on /admin/modelle, not here
-        recognizers = [
-            r for r in get_recognizers(db)
-            if r.name not in BERT_MODEL_REGISTRY
-        ]
-        context = get_template_context(request, recognizers=recognizers)
-        return templates.TemplateResponse("recognizers/list.html", context)
-    finally:
-        db.close()
-
-
-@admin_router.get("/recognizers/create", response_class=HTMLResponse)
-async def create_recognizer_page(request: Request, user: dict = Depends(require_auth)):
-    """Render the create recognizer form."""
-    db = SessionLocal()
-    try:
-        entities = get_entities(db, active_only=True)
-        context = get_template_context(request, entities=entities)
-        return templates.TemplateResponse("recognizers/create.html", context)
-    finally:
-        db.close()
-
-
-@admin_router.post("/recognizers/create")
-async def create_recognizer_submit(
+@admin_router.post("/preview")
+async def preview_pattern(
     request: Request,
-    name: Annotated[str, Form()],
-    supported_entity: Annotated[str, Form()],
-    supported_language: Annotated[str, Form()] = "de",
-    is_active: Annotated[bool, Form()] = True,
-    min_score: Annotated[str, Form()] = "",
+    text: Annotated[str, Form()],
+    pattern: Annotated[str, Form()],
     user: dict = Depends(require_auth)
 ):
-    """Create a new recognizer."""
-    db = SessionLocal()
+    """Preview how a regex matches text, with a short explanation."""
     try:
-        # Check if name already exists
-        existing = get_recognizer_by_name(db, name)
-        if existing:
-            entities = get_entities(db, active_only=True)
-            context = get_template_context(
-                request,
-                entities=entities,
-                error=f"Eine Erkennungsregel mit dem Namen '{name}' existiert bereits",
-                name=name,
-                supported_entity=supported_entity,
-                supported_language=supported_language,
-                min_score=min_score
-            )
-            return templates.TemplateResponse("recognizers/create.html", context, status_code=400)
-
-        try:
-            min_score_value = float(min_score) if min_score.strip() else None
-        except ValueError:
-            entities = get_entities(db, active_only=True)
-            context = get_template_context(
-                request,
-                entities=entities,
-                error="Mindest-Score muss eine Zahl zwischen 0 und 1 sein",
-                name=name,
-                supported_entity=supported_entity,
-                supported_language=supported_language,
-                min_score=min_score
-            )
-            return templates.TemplateResponse("recognizers/create.html", context, status_code=400)
-
-        recognizer = create_recognizer(
-            db,
-            name=name,
-            supported_entity=supported_entity,
-            supported_language=supported_language,
-            is_active=is_active,
-            min_score=min_score_value
-        )
-        return RedirectResponse(url=f"/admin/recognizers/{recognizer.id}", status_code=303)
-    finally:
-        db.close()
-
-
-@admin_router.get("/recognizers/{recognizer_id}", response_class=HTMLResponse)
-async def view_recognizer(
-    request: Request,
-    recognizer_id: int,
-    user: dict = Depends(require_auth)
-):
-    """Render the recognizer detail page."""
-    db = SessionLocal()
-    try:
-        recognizer = get_recognizer(db, recognizer_id)
-        if not recognizer:
-            raise HTTPException(status_code=404, detail="Erkennungsregel nicht gefunden")
-        if recognizer.name in BERT_MODEL_REGISTRY:
-            # Model rows are managed on /admin/modelle
-            return RedirectResponse(url="/admin/modelle", status_code=303)
-
-        patterns = get_patterns_by_recognizer(db, recognizer_id)
-        context_words = get_context_words_by_recognizer(db, recognizer_id)
-
-        context = get_template_context(
-            request,
-            recognizer=recognizer,
-            patterns=patterns,
-            context_words=context_words
-        )
-        return templates.TemplateResponse("recognizers/view.html", context)
-    finally:
-        db.close()
-
-
-@admin_router.get("/recognizers/{recognizer_id}/edit", response_class=HTMLResponse)
-async def edit_recognizer_page(
-    request: Request,
-    recognizer_id: int,
-    user: dict = Depends(require_auth)
-):
-    """Render the edit recognizer form."""
-    db = SessionLocal()
-    try:
-        recognizer = get_recognizer(db, recognizer_id)
-        if not recognizer:
-            raise HTTPException(status_code=404, detail="Erkennungsregel nicht gefunden")
-        if recognizer.name in BERT_MODEL_REGISTRY:
-            return RedirectResponse(url="/admin/modelle", status_code=303)
-
-        entities = get_entities(db, active_only=True)
-        context = get_template_context(request, recognizer=recognizer, entities=entities)
-        return templates.TemplateResponse("recognizers/edit.html", context)
-    finally:
-        db.close()
-
-
-@admin_router.post("/recognizers/{recognizer_id}/edit")
-async def edit_recognizer_submit(
-    request: Request,
-    recognizer_id: int,
-    name: Annotated[str, Form()],
-    supported_entity: Annotated[str, Form()],
-    supported_language: Annotated[str, Form()] = "de",
-    is_active: Annotated[bool, Form()] = False,
-    min_score: Annotated[str, Form()] = "",
-    user: dict = Depends(require_auth)
-):
-    """Update a recognizer."""
-    db = SessionLocal()
-    try:
-        recognizer = get_recognizer(db, recognizer_id)
-        if not recognizer:
-            raise HTTPException(status_code=404, detail="Erkennungsregel nicht gefunden")
-        if recognizer.name in BERT_MODEL_REGISTRY:
-            return RedirectResponse(url="/admin/modelle", status_code=303)
-
-        # Check if name already exists (for another recognizer)
-        existing = get_recognizer_by_name(db, name)
-        if existing and existing.id != recognizer_id:
-            entities = get_entities(db, active_only=True)
-            context = get_template_context(
-                request,
-                recognizer=recognizer,
-                entities=entities,
-                error=f"Eine Erkennungsregel mit dem Namen '{name}' existiert bereits"
-            )
-            return templates.TemplateResponse("recognizers/edit.html", context, status_code=400)
-
-        try:
-            min_score_value = float(min_score) if min_score.strip() else None
-        except ValueError:
-            entities = get_entities(db, active_only=True)
-            context = get_template_context(
-                request,
-                recognizer=recognizer,
-                entities=entities,
-                error="Mindest-Score muss eine Zahl zwischen 0 und 1 sein"
-            )
-            return templates.TemplateResponse("recognizers/edit.html", context, status_code=400)
-
-        update_recognizer(
-            db,
-            recognizer_id,
-            name=name,
-            supported_entity=supported_entity,
-            supported_language=supported_language,
-            is_active=is_active,
-            min_score=min_score_value,
-            clear_min_score=min_score_value is None
-        )
-        return RedirectResponse(url=f"/admin/recognizers/{recognizer_id}", status_code=303)
-    finally:
-        db.close()
-
-
-@admin_router.post("/recognizers/{recognizer_id}/delete")
-async def delete_recognizer_submit(
-    request: Request,
-    recognizer_id: int,
-    user: dict = Depends(require_auth)
-):
-    """Delete a recognizer."""
-    db = SessionLocal()
-    try:
-        recognizer = get_recognizer(db, recognizer_id)
-        if recognizer and recognizer.name in BERT_MODEL_REGISTRY:
-            # Model rows are managed on /admin/modelle and must not be deleted
-            return RedirectResponse(url="/admin/modelle", status_code=303)
-        delete_recognizer(db, recognizer_id)
-        return RedirectResponse(url="/admin/recognizers", status_code=303)
-    finally:
-        db.close()
-
-
-# ============================================================================
-# Patterns
-# ============================================================================
-
-@admin_router.post("/recognizers/{recognizer_id}/patterns/create")
-async def create_pattern_submit(
-    request: Request,
-    recognizer_id: int,
-    name: Annotated[str, Form()],
-    regex: Annotated[str, Form()],
-    score: Annotated[float, Form()],
-    user: dict = Depends(require_auth)
-):
-    """Create a new pattern for a recognizer."""
-    db = SessionLocal()
-    try:
-        # Validate regex
-        try:
-            re.compile(regex)
-        except re.error as e:
-            recognizer = get_recognizer(db, recognizer_id)
-            patterns = get_patterns_by_recognizer(db, recognizer_id)
-            context_words = get_context_words_by_recognizer(db, recognizer_id)
-            context = get_template_context(
-                request,
-                recognizer=recognizer,
-                patterns=patterns,
-                context_words=context_words,
-                error=f"Ungültiger regulärer Ausdruck: {str(e)}",
-                pattern_name=name,
-                pattern_regex=regex,
-                pattern_score=score
-            )
-            return templates.TemplateResponse("recognizers/view.html", context, status_code=400)
-
-        # Check if name already exists
-        existing = get_pattern_by_name(db, name)
-        if existing:
-            recognizer = get_recognizer(db, recognizer_id)
-            patterns = get_patterns_by_recognizer(db, recognizer_id)
-            context_words = get_context_words_by_recognizer(db, recognizer_id)
-            context = get_template_context(
-                request,
-                recognizer=recognizer,
-                patterns=patterns,
-                context_words=context_words,
-                error=f"Ein Muster mit dem Namen '{name}' existiert bereits"
-            )
-            return templates.TemplateResponse("recognizers/view.html", context, status_code=400)
-
-        create_pattern(db, name=name, regex=regex, score=score, recognizer_id=recognizer_id)
-        return RedirectResponse(url=f"/admin/recognizers/{recognizer_id}", status_code=303)
-    finally:
-        db.close()
-
-
-@admin_router.post("/patterns/{pattern_id}/edit")
-async def edit_pattern_submit(
-    request: Request,
-    pattern_id: int,
-    name: Annotated[str, Form()],
-    regex: Annotated[str, Form()],
-    score: Annotated[float, Form()],
-    user: dict = Depends(require_auth)
-):
-    """Update a pattern."""
-    db = SessionLocal()
-    try:
-        pattern = get_pattern(db, pattern_id)
-        if not pattern:
-            raise HTTPException(status_code=404, detail="Muster nicht gefunden")
-
-        # Validate regex
-        try:
-            re.compile(regex)
-        except re.error as e:
-            context = get_template_context(
-                request,
-                error=f"Ungültiger regulärer Ausdruck: {str(e)}",
-                pattern=pattern
-            )
-            return templates.TemplateResponse("patterns/edit.html", context, status_code=400)
-
-        update_pattern(db, pattern_id, name=name, regex=regex, score=score)
-        return RedirectResponse(url=f"/admin/recognizers/{pattern.recognizer_id}", status_code=303)
-    finally:
-        db.close()
-
-
-@admin_router.post("/patterns/{pattern_id}/delete")
-async def delete_pattern_submit(
-    request: Request,
-    pattern_id: int,
-    user: dict = Depends(require_auth)
-):
-    """Delete a pattern."""
-    db = SessionLocal()
-    try:
-        pattern = get_pattern(db, pattern_id)
-        if not pattern:
-            raise HTTPException(status_code=404, detail="Muster nicht gefunden")
-
-        recognizer_id = pattern.recognizer_id
-        delete_pattern(db, pattern_id)
-        return RedirectResponse(url=f"/admin/recognizers/{recognizer_id}", status_code=303)
-    finally:
-        db.close()
-
-
-@admin_router.get("/patterns/{pattern_id}/edit", response_class=HTMLResponse)
-async def edit_pattern_page(
-    request: Request,
-    pattern_id: int,
-    user: dict = Depends(require_auth)
-):
-    """Render the edit pattern form."""
-    db = SessionLocal()
-    try:
-        pattern = get_pattern(db, pattern_id)
-        if not pattern:
-            raise HTTPException(status_code=404, detail="Muster nicht gefunden")
-
-        context = get_template_context(request, pattern=pattern)
-        return templates.TemplateResponse("patterns/edit.html", context)
-    finally:
-        db.close()
-
-
-# ============================================================================
-# Context Words
-# ============================================================================
-
-@admin_router.post("/recognizers/{recognizer_id}/context/create")
-async def create_context_word_submit(
-    request: Request,
-    recognizer_id: int,
-    word: Annotated[str, Form()],
-    user: dict = Depends(require_auth)
-):
-    """Create a new context word for a recognizer."""
-    db = SessionLocal()
-    try:
-        create_context_word(db, word=word, recognizer_id=recognizer_id)
-        return RedirectResponse(url=f"/admin/recognizers/{recognizer_id}", status_code=303)
-    finally:
-        db.close()
-
-
-@admin_router.post("/context/{context_word_id}/delete")
-async def delete_context_word_submit(
-    request: Request,
-    context_word_id: int,
-    user: dict = Depends(require_auth)
-):
-    """Delete a context word."""
-    db = SessionLocal()
-    try:
-        context_word = get_context_word(db, context_word_id)
-        if not context_word:
-            raise HTTPException(status_code=404, detail="Kontextwort nicht gefunden")
-
-        recognizer_id = context_word.recognizer_id
-        delete_context_word(db, context_word_id)
-        return RedirectResponse(url=f"/admin/recognizers/{recognizer_id}", status_code=303)
-    finally:
-        db.close()
+        compiled = re.compile(pattern)
+        matches = list(compiled.finditer(text))
+        return {
+            "success": True,
+            "matches": [
+                {"start": m.start(), "end": m.end(), "match": m.group()}
+                for m in matches
+            ],
+            "count": len(matches),
+        }
+    except re.error as e:
+        return {"success": False, "error": str(e)}
 
 
 # ============================================================================
@@ -567,39 +259,6 @@ async def change_password_submit(
         return templates.TemplateResponse("profile/password.html", context)
     finally:
         db.close()
-
-
-# ============================================================================
-# Pattern Preview (API)
-# ============================================================================
-
-@admin_router.post("/preview")
-async def preview_pattern(
-    request: Request,
-    text: Annotated[str, Form()],
-    pattern: Annotated[str, Form()],
-    user: dict = Depends(require_auth)
-):
-    """Preview how a pattern matches text."""
-    try:
-        compiled_pattern = re.compile(pattern)
-        matches = list(compiled_pattern.finditer(text))
-        return {
-            "success": True,
-            "matches": [
-                {"start": m.start(), "end": m.end(), "match": m.group()}
-                for m in matches
-            ]
-        }
-    except re.error as e:
-        return {"success": False, "error": str(e)}
-
-
-# ============================================================================
-# Helper functions
-# ============================================================================
-
-
 
 
 # ============================================================================
@@ -669,7 +328,10 @@ async def list_entities(request: Request, user: dict = Depends(require_auth)):
     db = SessionLocal()
     try:
         entities = get_entities(db)
-        context = get_template_context(request, entities=entities)
+        pattern_counts = {e.id: len(e.patterns) for e in entities}
+        context = get_template_context(
+            request, entities=entities, pattern_counts=pattern_counts
+        )
         return templates.TemplateResponse("entities/list.html", context)
     finally:
         db.close()
@@ -795,11 +457,188 @@ async def delete_entity_submit(
 
 
 # ============================================================================
-# Transformer models (on/off switches, not editable recognizers)
+# Entity detail: patterns + context words hang directly off the entity
+# ============================================================================
+
+@admin_router.get("/entities/{entity_id}", response_class=HTMLResponse)
+async def view_entity(
+    request: Request,
+    entity_id: int,
+    user: dict = Depends(require_auth)
+):
+    """Render the entity detail page (patterns + context words)."""
+    db = SessionLocal()
+    try:
+        entity = get_entity(db, entity_id)
+        if not entity:
+            raise HTTPException(status_code=404, detail="Entität nicht gefunden")
+        context = get_template_context(
+            request,
+            entity=entity,
+            patterns=get_patterns_by_entity(db, entity_id),
+            context_words=get_context_words_by_entity(db, entity_id),
+            pattern_templates=PATTERN_TEMPLATES,
+        )
+        return templates.TemplateResponse("entities/view.html", context)
+    finally:
+        db.close()
+
+
+@admin_router.post("/entities/{entity_id}/patterns/create")
+async def create_pattern_submit(
+    request: Request,
+    entity_id: int,
+    name: Annotated[str, Form()],
+    regex: Annotated[str, Form()] = "",
+    score: Annotated[float, Form()] = 0.5,
+    keywords: Annotated[str, Form()] = "",
+    user: dict = Depends(require_auth)
+):
+    """Create a pattern for an entity (raw regex or keyword list).
+
+    In keyword mode the admin enters comma/newline-separated terms and the
+    regex is generated here, so no regex knowledge is required. The raw
+    regex field stays available for advanced cases.
+    """
+    db = SessionLocal()
+    try:
+        entity = get_entity(db, entity_id)
+        if not entity:
+            raise HTTPException(status_code=404, detail="Entität nicht gefunden")
+
+        stored_keywords = None
+        if keywords.strip():
+            regex = build_keyword_regex(keywords)
+            stored_keywords = keywords.strip()
+
+        error = _validate_pattern(db, name, regex)
+        if error:
+            context = get_template_context(
+                request, entity=entity,
+                patterns=get_patterns_by_entity(db, entity_id),
+                context_words=get_context_words_by_entity(db, entity_id),
+                error=error,
+            )
+            return templates.TemplateResponse("entities/view.html", context, status_code=400)
+
+        create_pattern(db, name=name, regex=regex, score=score, entity_id=entity_id, keywords=stored_keywords)
+        return RedirectResponse(url=f"/admin/entities/{entity_id}", status_code=303)
+    finally:
+        db.close()
+
+
+@admin_router.post("/patterns/{pattern_id}/edit")
+async def edit_pattern_submit(
+    request: Request,
+    pattern_id: int,
+    name: Annotated[str, Form()],
+    regex: Annotated[str, Form()] = "",
+    score: Annotated[float, Form()] = 0.5,
+    keywords: Annotated[str, Form()] = "",
+    user: dict = Depends(require_auth)
+):
+    """Update a pattern (raw regex or keyword list)."""
+    db = SessionLocal()
+    try:
+        pattern = get_pattern(db, pattern_id)
+        if not pattern:
+            raise HTTPException(status_code=404, detail="Muster nicht gefunden")
+
+        stored_keywords = None
+        if keywords.strip():
+            regex = build_keyword_regex(keywords)
+            stored_keywords = keywords.strip()
+
+        error = _validate_pattern(db, name, regex, ignore_id=pattern_id)
+        if error:
+            context = get_template_context(request, error=error, pattern=pattern)
+            return templates.TemplateResponse("patterns/edit.html", context, status_code=400)
+
+        update_pattern(db, pattern_id, name=name, regex=regex, score=score, keywords=stored_keywords)
+        return RedirectResponse(url=f"/admin/entities/{pattern.entity_id}", status_code=303)
+    finally:
+        db.close()
+
+
+@admin_router.get("/patterns/{pattern_id}/edit", response_class=HTMLResponse)
+async def edit_pattern_page(
+    request: Request,
+    pattern_id: int,
+    user: dict = Depends(require_auth)
+):
+    """Render the edit pattern form."""
+    db = SessionLocal()
+    try:
+        pattern = get_pattern(db, pattern_id)
+        if not pattern:
+            raise HTTPException(status_code=404, detail="Muster nicht gefunden")
+        context = get_template_context(request, pattern=pattern)
+        return templates.TemplateResponse("patterns/edit.html", context)
+    finally:
+        db.close()
+
+
+@admin_router.post("/patterns/{pattern_id}/delete")
+async def delete_pattern_submit(
+    request: Request,
+    pattern_id: int,
+    user: dict = Depends(require_auth)
+):
+    """Delete a pattern."""
+    db = SessionLocal()
+    try:
+        pattern = get_pattern(db, pattern_id)
+        if not pattern:
+            raise HTTPException(status_code=404, detail="Muster nicht gefunden")
+        entity_id = pattern.entity_id
+        delete_pattern(db, pattern_id)
+        return RedirectResponse(url=f"/admin/entities/{entity_id}", status_code=303)
+    finally:
+        db.close()
+
+
+@admin_router.post("/entities/{entity_id}/context/create")
+async def create_context_word_submit(
+    request: Request,
+    entity_id: int,
+    word: Annotated[str, Form()],
+    user: dict = Depends(require_auth)
+):
+    """Create one or more (comma-separated) context words for an entity."""
+    db = SessionLocal()
+    try:
+        for term in [w.strip() for w in re.split(r"[,\n;]+", word) if w.strip()]:
+            create_context_word(db, word=term, entity_id=entity_id)
+        return RedirectResponse(url=f"/admin/entities/{entity_id}", status_code=303)
+    finally:
+        db.close()
+
+
+@admin_router.post("/context/{context_word_id}/delete")
+async def delete_context_word_submit(
+    request: Request,
+    context_word_id: int,
+    user: dict = Depends(require_auth)
+):
+    """Delete a context word."""
+    db = SessionLocal()
+    try:
+        context_word = get_context_word(db, context_word_id)
+        if not context_word:
+            raise HTTPException(status_code=404, detail="Kontextwort nicht gefunden")
+        entity_id = context_word.entity_id
+        delete_context_word(db, context_word_id)
+        return RedirectResponse(url=f"/admin/entities/{entity_id}", status_code=303)
+    finally:
+        db.close()
+
+
+# ============================================================================
+# Transformer models (on/off switches)
 # ============================================================================
 
 # Human-readable descriptions for the model cards. Keys are the registry
-# keys (= recognizers.name DB rows) from BERT_MODEL_REGISTRY. The latency
+# keys (= detector_models.name rows) from BERT_MODEL_REGISTRY. The latency
 # numbers come from scripts/benchmark_all_models.py (median, 4 CPU cores /
 # RTX 3060) - rerun it after changing the registry and update these.
 MODEL_DESCRIPTIONS = {
@@ -844,10 +683,10 @@ async def list_models(request: Request, user: dict = Depends(require_auth)):
     """Render the transformer model on/off switches."""
     db = SessionLocal()
     try:
-        rows = {row.name: row for row in get_recognizers(db)}
+        from backend.database.crud import get_detector_model_by_name
         models = []
         for key, entry in BERT_MODEL_REGISTRY.items():
-            row = rows.get(key)
+            row = get_detector_model_by_name(db, key)
             meta = MODEL_DESCRIPTIONS.get(key, {"title": key, "description": ""})
             models.append({
                 "key": key,
@@ -872,21 +711,19 @@ async def toggle_model(
 ):
     """Toggle a transformer model on or off and rebuild the analyzer.
 
-    The model rows are intentionally NOT editable recognizers: everything
-    (model, label mapping) comes from BERT_MODEL_REGISTRY in code - the
-    admin UI only flips the is_active flag and reloads, mirroring the
-    /api/v1/reload flow.
+    Model and label mapping come from BERT_MODEL_REGISTRY in code; the
+    admin UI only flips the `detector_models.is_active` flag and reloads,
+    mirroring the /api/v1/reload flow.
     """
     if model_key not in BERT_MODEL_REGISTRY:
         raise HTTPException(status_code=404, detail="Modell nicht gefunden")
 
     db = SessionLocal()
     try:
-        row = get_recognizer_by_name(db, model_key)
-        if not row:
-            raise HTTPException(status_code=404, detail="Modell-Zeile nicht in der Datenbank")
-
-        update_recognizer(db, row.id, is_active=not row.is_active)
+        from backend.database.crud import get_detector_model_by_name
+        row = get_detector_model_by_name(db, model_key)
+        new_state = not (row.is_active if row else False)
+        set_detector_model_active(db, model_key, new_state)
 
         # Rebuild the singleton analyzer immediately (same as POST /reload)
         import backend.views.anonymizer as anonymizer_module

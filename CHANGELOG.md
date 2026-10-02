@@ -12,8 +12,30 @@ section as the GitHub Release notes.
 
 ## [Unreleased]
 
+### Changed
+
+- **Datenmodell vereinfacht: Entitäten sind jetzt die zentrale Einheit**
+  (Migration `013`). Die Zwischenebene „Erkennungsregel/Recognizer" ist
+  entfernt; Muster und Kontextwörter hängen über `entity_id` direkt an der
+  Entität. Damit entfallen die 9 wirkungslosen `spacy_*`/`builtin_*`-
+  Platzhalterzeilen, und die Erkennung ist ein Konzept statt vier. Die
+  Transformer-Schalter liegen in der neuen Tabelle `detector_models`.
+  Admin-UI: Entitäten-Liste → Detailseite je Entität mit Mustern,
+  Kontextwörtern und Muster-Tester; „Erkennungsregeln" ist aus der Sidebar
+  entfernt.
+- **API-Pfade in der Doku korrigiert**: Der Sanitize/Reload-Endpunkt heißt
+  `/api/v1/sanitize` bzw. `/api/v1/reload` (nicht `/api/v1/entityguard/*`);
+  README, AGENTS und `docs/OpenWebUI.md` waren hier falsch und hätten die
+  OpenWebUI-Einbindung brechen lassen.
+
 ### Added
 
+- **Regex-Vereinfachung**: Muster lassen sich auf der Entitäts-Detailseite
+  als **Stichwortliste** eingeben (komma-/zeilengetrennt → automatischer
+  Wortgrenzen-Regex, in `patterns.keywords` gespeichert) oder weiterhin als
+  Rohregex. Ein-Klick-**Vorlagen** (Telefon DE, IBAN, Datum, PLZ, E-Mail,
+  Straße+PLZ Ort) füllen den Regex-Modus; der **Muster-Tester** zeigt Treffer
+  mit Position und erlaubt das direkte Übernehmen eines Musters per Klick.
 - **Split-View-Sanitize-Seite** (`/sanitize`) — zweispaltige Ansicht: links
   Text schreiben oder `.txt`/`.md` per Button bzw. Drag & Drop laden, rechts
   erscheint die anonymisierte Version live beim Tippen (600 ms Debounce).

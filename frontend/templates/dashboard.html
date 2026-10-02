@@ -8,18 +8,18 @@
 </div>
 
 <p class="help-text">
-    Übersicht über alle konfigurierten Erkennungsregeln, mit denen EntityGuard sensible Daten in Texten identifiziert
+    Übersicht über alle konfigurierten Entitäten, mit denen EntityGuard sensible Daten in Texten identifiziert
     und anonymisiert.
 </p>
 
 <div class="stats-grid">
     <div class="stat-card">
-        <div class="stat-value">{{ recognizers|length }}</div>
-        <div class="stat-label">Erkennungsregeln gesamt</div>
+        <div class="stat-value">{{ entities|length }}</div>
+        <div class="stat-label">Entitäten gesamt</div>
     </div>
     <div class="stat-card">
         <div class="stat-value">{{ active_count }}</div>
-        <div class="stat-label">Aktive Erkennungsregeln</div>
+        <div class="stat-label">Aktive Entitäten</div>
     </div>
     <div class="stat-card">
         <div class="stat-value">{{ total_patterns }}</div>
@@ -29,41 +29,39 @@
 
 <div class="section">
     <div class="section-header">
-        <h2>Zuletzt angelegte Erkennungsregeln</h2>
-        <a href="/admin/recognizers" class="btn btn-secondary">Alle anzeigen</a>
+        <h2>Entitäten</h2>
+        <a href="/admin/entities" class="btn btn-secondary">Alle anzeigen</a>
     </div>
 
-    {% if recognizers %}
+    {% if entities %}
     <table class="data-table">
         <thead>
             <tr>
                 <th>Name</th>
-                <th>Entität (Typ)</th>
-                <th>Sprache</th>
+                <th>Platzhalter</th>
                 <th>Status</th>
                 <th>Muster</th>
             </tr>
         </thead>
         <tbody>
-            {% for recognizer in recognizers[:5] %}
+            {% for entity in entities[:5] %}
             <tr>
                 <td>
-                    <a href="/admin/recognizers/{{ recognizer.id }}">{{ recognizer.name }}</a>
+                    <a href="/admin/entities/{{ entity.id }}">{{ entity.name }}</a>
                 </td>
-                <td>{{ recognizer.supported_entity }}</td>
-                <td>{{ recognizer.supported_language }}</td>
+                <td><code>{{ entity.placeholder }}</code></td>
                 <td>
-                    <span class="badge {% if recognizer.is_active %}badge-success{% else %}badge-secondary{% endif %}">
-                        {% if recognizer.is_active %}Aktiv{% else %}Inaktiv{% endif %}
+                    <span class="badge {% if entity.is_active %}badge-success{% else %}badge-secondary{% endif %}">
+                        {% if entity.is_active %}Aktiv{% else %}Inaktiv{% endif %}
                     </span>
                 </td>
-                <td>{{ recognizer.patterns|length }}</td>
+                <td>{{ entity.patterns|length }}</td>
             </tr>
             {% endfor %}
         </tbody>
     </table>
     {% else %}
-    <p class="empty-state">Noch keine Erkennungsregeln konfiguriert. <a href="/admin/recognizers/create">Erste Erkennungsregel erstellen</a>.</p>
+    <p class="empty-state">Noch keine Entitäten konfiguriert. <a href="/admin/entities/create">Erste Entität erstellen</a>.</p>
     {% endif %}
 </div>
 
@@ -79,19 +77,18 @@
             </svg>
             <span class="action-label">Text anonymisieren</span>
         </a>
-        <a href="/admin/recognizers/create" class="action-card">
+        <a href="/admin/entities/create" class="action-card">
             <svg class="action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <line x1="12" y1="5" x2="12" y2="19"/>
                 <line x1="5" y1="12" x2="19" y2="12"/>
             </svg>
-            <span class="action-label">Neue Erkennungsregel</span>
+            <span class="action-label">Neue Entität</span>
         </a>
-        <a href="/admin/recognizers" class="action-card">
+        <a href="/admin/entities" class="action-card">
             <svg class="action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <circle cx="11" cy="11" r="8"/>
-                <path d="M21 21l-4.35-4.35"/>
+                <path d="M7 7h.01M7 3h5c1.133 0 2.2.534 2.868 1.434l4 6c1.072 1.607.844 3.73-.548 5.123l-2.863 2.863c-1.393 1.392-3.516 1.62-5.123.548l-6-4C3.534 14.2 3 13.133 3 12V7a4 4 0 0 1 4-4z"/>
             </svg>
-            <span class="action-label">Erkennungsregeln verwalten</span>
+            <span class="action-label">Entitäten verwalten</span>
         </a>
     </div>
 </div>

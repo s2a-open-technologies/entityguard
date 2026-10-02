@@ -26,8 +26,8 @@ from presidio_analyzer.nlp_engine import NlpArtifacts
 logger = logging.getLogger("uvicorn.error")
 
 # Registry of selectable transformer NER/PII models. The registry key is
-# the `recognizers.name` DB row that toggles the model in the admin UI
-# (seeded by alembic migration 011/012). Each entry maps the model's raw
+# the `detector_models.name` row that toggles the model in the admin UI
+# (seeded by alembic migration 013). Each entry maps the model's raw
 # entity_group labels to EntityGuard entity types (see the `entities`
 # table); labels without a mapping are dropped, i.e. never masked.
 #
