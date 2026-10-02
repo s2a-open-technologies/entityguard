@@ -19,6 +19,40 @@
 </div>
 
 <div class="section">
+    <h2>Erkennungsquellen</h2>
+    <p class="help-text">
+        Eine Entität kann aus drei Quellen Treffer bekommen. Die Liste <a href="/admin/entities">Entitäten</a> zeigt pro
+        Entität, was sie tatsächlich erkennt — die Detailseite ebenso:
+    </p>
+    <div class="detail-grid">
+        <div class="detail-card">
+            <h3>Muster</h3>
+            <p class="help-text mb-0">
+                Von Ihnen gepflegte Regexe bzw. Stichwort-Listen (siehe unten). Erscheint als Chip „Muster“.
+            </p>
+        </div>
+        <div class="detail-card">
+            <h3>Standard-Engines</h3>
+            <p class="help-text mb-0">
+                Eingebaute Erkennung: <code>spaCy</code> für Personen, Orte und Organisationen sowie Presidio für
+                E-Mail und Telefon. Erscheint als Chip „spaCy“ bzw. „Presidio …“.
+            </p>
+        </div>
+        <div class="detail-card">
+            <h3>Modelle</h3>
+            <p class="help-text mb-0">
+                Optional zugeschaltete KI-Modelle (siehe <a href="/admin/modelle">Modelle</a>). Erscheint nur als
+                Chip „Modell: …“, wenn das Modell gerade <em>aktiv</em> ist.
+            </p>
+        </div>
+    </div>
+    <p class="help-text mt-3">
+        Hat eine Entität keine dieser Quellen, wird sie als <span class="badge badge-warning">⚠ nicht erkannt</span>
+        markiert — ihre Treffer würden dann nie maskiert.
+    </p>
+</div>
+
+<div class="section">
     <h2>Grundbegriffe</h2>
     <div class="detail-grid">
         <div class="detail-card">
@@ -65,17 +99,24 @@
         </li>
         <li>
             <strong>Muster hinzufügen</strong> auf der Detailseite der Entität: entweder Stichwörter eingeben
-            (einfach) oder eine Regex (fortgeschritten) - mit Score.
+            (einfach) oder eine Regex (fortgeschritten) - mit Score. Für häufige Fälle gibt es unter dem Formular
+            <strong>Vorlagen</strong> (Telefon DE, IBAN, Datum, PLZ, E-Mail, Straße+PLZ Ort), die den Regex-Modus
+            mit einem fertigen Ausdruck füllen.
         </li>
         <li>
             <strong>Kontextwörter ergänzen</strong> (optional), um die Trefferquote in echten Texten zu erhöhen.
         </li>
         <li>
-            <strong>Muster testen</strong> mit dem Muster-Tester auf der Detailseite, bevor Sie live gehen.
+            <strong>Muster testen</strong> mit dem Muster-Tester auf der Detailseite, bevor Sie live gehen. Klicken
+            Sie dazu eine Musterzeile an, um sie direkt in den Tester zu übernehmen.
         </li>
         <li>
             <strong>Entität aktivieren</strong> (Status "Aktiv"), damit sie bei der Textverarbeitung
             berücksichtigt wird.
+        </li>
+        <li>
+            <strong>Erkennungsquellen prüfen</strong>: Steht in der Spalte „Erkennung“ ein
+            <span class="badge badge-warning">⚠ nicht erkannt</span>, fehlt ein Muster oder ein aktives Modell.
         </li>
     </ol>
 </div>
@@ -89,6 +130,9 @@
             automatisch ein Muster mit Wortgrenzen.</li>
         <li>Für Experten: Regexe folgen der Python-<code>re</code>-Syntax. Testen Sie neue Muster immer zuerst mit
             dem Muster-Tester.</li>
+        <li>Die deutsche spaCy-Erkennung findet manche Namen nur isoliert; das Standard-Muster <code>anrede_name</code>
+            fängt „Herr/Frau/Patient + Name“ auch im Fließtext. Für noch mehr Robustheit ein Modell unter
+            <a href="/admin/modelle">Modelle</a> zuschalten.</li>
         <li>Inaktive Entitäten bleiben erhalten, werden aber bei der Textverarbeitung ignoriert – nützlich zum
             Vorbereiten oder vorübergehenden Deaktivieren.</li>
     </ul>

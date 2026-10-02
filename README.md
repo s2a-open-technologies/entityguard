@@ -82,23 +82,31 @@ Erwartete Antwort:
 
 | Entität | Beispiel | Platzhalter |
 |---------|----------|-------------|
-| `PERSON` | Max Mustermann, Dr. Schmidt | `[NAME]` |
+| `PERSON` | Max Mustermann, Frau Stolz, Dr. Schmidt | `[NAME]` |
 | `LOCATION` | Berlin, Musterstraße 1 | `[ADRESSE/ORT]` |
-| `DATE_TIME` | 15.03.1980, 14:30 Uhr | `[DATUM/ZEIT]` |
+| `ORGANIZATION` | Charité Berlin | `[ORGANISATION]` |
+| `DATE_TIME` | 15.03.1980 | `[DATUM/ZEIT]` |
 | `EMAIL_ADDRESS` | max@beispiel.de | `[EMAIL]` |
 | `PHONE_NUMBER` | +49 30 123456, 0171/1234567 | `[TELEFON]` |
 | `MEDICAL_CONTEXT` | AOK, Chefarzt, Fallnr. 48291 | `[MED_IDENTIFIKATOR]` |
 | `IBAN_CODE` | DE89 3704 0044 0532 0130 00 | `[SENSITIV]` |
 
+Wodurch eine Entität erkannt wird, zeigt das Admin-Interface pro Entität
+(Spalte „Erkennung“): `Muster` (eigene Regexe), `spaCy`/`Presidio`
+(Standard-Engines) und `Modell: …` (nur aktive Transformer). Entitäten ohne
+Quelle werden als „nicht erkannt“ markiert.
+
 **Deutschland-spezifische Erkennung (Custom Patterns):**
 
 | Kategorie | Beispiele |
 |-----------|-----------|
+| Namen mit Anrede | Herr/Frau/Patient/Dr./Prof. + Name (`anrede_name`) |
 | Krankenkassen | AOK, TK, Techniker Krankenkasse, Barmer, DAK, Hallesche, Debeka |
 | Berufe im exponierten Kontext | Chefarzt, Bürgermeister, Landrat, Vorstand, Abgeordneter |
 | Gewerkschaften | ver.di, IG Metall, GEW, Marburger Bund |
 | Fallnummern | 5+ stellige Zahlen im medizinischen Kontext (Patient, Akte, Befund) |
-| Geburtsdaten | DD.MM.YYYY-Format mit medizinischen Kontextwörtern |
+| Datum | DD.MM.YYYY (`datum_generic`) |
+| IBAN | deutsche IBAN (`iban_de`) |
 | Telefonnummern | +49- und 0-Präfix, verschiedene Formate |
 
 Alle Patterns und Entitäten sind über das Admin-Interface konfigurierbar.
