@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+
+{% block title %}Benutzer{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Benutzer</h1>
+</div>
+
+<p class="help-text">
+    Konten für den Zugriff auf dieses Admin-Interface. <strong>Admin</strong> darf alles,
+    <strong>Viewer</strong> nur ansehen (keine Änderungen). Der Zugang zu den Apps läuft getrennt
+    über <a href="/admin/api-keys">API-Schlüssel</a>.
+</p>
+
+<div class="section">
+    <h2>Neuen Benutzer anlegen</h2>
+    <form method="POST" action="/admin/users/create" class="form-inline">
+        <div class="form-group flex-grow">
+            <input type="text" name="username" placeholder="Benutzername" required>
+        </div>
+        <div class="form-group flex-grow">
+            <input type="password" name="password" placeholder="Passwort (min. 8 Zeichen)" required>
+        </div>
+        <div class="form-group">
+            <select name="role">
+                <option value="viewer">Viewer (nur ansehen)</option>
+                <option value="admin">Admin (voller Zugriff)</option>
+            </select>
+        </div>
+        <button type="submit" class="btn btn-primary btn-sm">Anlegen</button>
+    </form>
+</div>
+
+<div class="section">
+    {% if users %}
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Benutzer</th>
+                <th>Rolle</th>
+                <th>Status</th>
+                <th>Erstellt</th>
+                <th>Aktionen</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for u in users %}
+            <tr>
+                <td>
+                    {{ u.username }}
+                    {% if u.id == current_user_id %}<span class="badge badge-secondary">Du</span>{% endif %}
+                </td>
+                <td>
+                    {% if u.id == current_user_id %}
+                    <span class="badge {% if u.role == 'admin' %}badge-success{% else %}badge-secondary{% endif %}">
+                        {{ 'Admin' if u.role == 'admin' else 'Viewer' }}
+                    </span>
+                    {% else %}
+                    <form method="POST" action="/admin/users/{{ u.id }}/role" class="inline-form">
+                        <select name="role" onchange="this.form.submit()">
+                            <option value="viewer" {% if u.role == 'viewer' %}selected{% endif %}>Viewer</option>
+                            <option value="admin" {% if u.role == 'admin' %}selected{% endif %}>Admin</option>
+                        </select>
+                    </form>
+                    {% endif %}
+                </td>
+                <td>
+                    <span class="badge {% if u.is_active %}badge-success{% else %}badge-secondary{% endif %}">
+                        {% if u.is_active %}Aktiv{% else %}Inaktiv{% endif %}
+                    </span>
+                </td>
+                <td>{{ u.created_at.strftime('%Y-%m-%d %H:%M') if u.created_at else '-' }}</td>
+                <td class="actions">
+                    <form method="POST" action="/admin/users/{{ u.id }}/reset-password" class="inline-form"
+                          onsubmit="return confirm('Passwort dieses Benutzers zurücksetzen?');">
+                        <input type="password" name="new_password" placeholder="Neues Passwort (min. 8)" required>
+                        <button type="submit" class="btn btn-secondary btn-sm">Passwort setzen</button>
+                    </form>
+                    {% if u.id != current_user_id %}
+                    <form method="POST" action="/admin/users/{{ u.id }}/toggle" class="inline-form">
+                        <button type="submit" class="btn btn-secondary btn-sm">
+                            {% if u.is_active %}Deaktivieren{% else %}Aktivieren{% endif %}
+                        </button>
+                    </form>
+                    <form method="POST" action="/admin/users/{{ u.id }}/delete" class="inline-form"
+                          onsubmit="return confirm('Diesen Benutzer wirklich löschen?');">
+                        <button type="submit" class="btn btn-danger btn-sm">Löschen</button>
+                    </form>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p class="empty-state">Keine Benutzer gefunden.</p>
+    {% endif %}
+</div>
+{% endblock %}

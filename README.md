@@ -5,8 +5,8 @@
 EntityGuard sitzt zwischen dem Nutzer und dem Sprachmodell. Bevor eine Nachricht das LLM erreicht, erkennt und maskiert der Dienst automatisch personenbezogene und medizinische Daten — DSGVO- und HIPAA-konform, ohne Neustart bei Konfigurationsänderungen.
 
 ```
-Eingabe:  "Patient Max Mustermann, geb. 15.03.1980, AOK-versichert, Fallnr. 48291"
-Ausgabe:  "Patient [NAME], geb. [DATUM/ZEIT], [MED_IDENTIFIKATOR]-versichert, Fallnr. [MED_IDENTIFIKATOR]"
+Eingabe:  "Patient Max Mustermann, geb. 15.03.1980, behandelt in der Charité."
+Ausgabe:  "[NAME_1], geb. [DATUM/ZEIT_1], behandelt in der [ORGANISATION_1]."
 ```
 
 **Stack:** FastAPI · Microsoft Presidio · spaCy (`de_core_news_lg`) · SQLite · Alembic · Docker
@@ -57,9 +57,13 @@ Der Admin-Benutzer `admin` / `admin` wird durch `uv run alembic upgrade head` an
 
 ### Erster Test
 
+Zuerst im Admin-Interface unter **API-Schlüssel** einen Schlüssel erzeugen
+(der Klartext wird nur einmal angezeigt) und ihn hier einsetzen:
+
 ```bash
 curl -s -X POST http://localhost:9500/api/v1/sanitize \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer eg_…" \
   -d '{"text": "Patient Max Mustermann, geb. 15.03.1980, behandelt in der Charité."}' \
   | python -m json.tool
 ```
@@ -67,14 +71,18 @@ curl -s -X POST http://localhost:9500/api/v1/sanitize \
 Erwartete Antwort:
 ```json
 {
-  "sanitized_text": "Patient [NAME_1], geb. [DATUM/ZEIT_1], behandelt in [ADRESSE/ORT_1].",
+  "sanitized_text": "[NAME_1], geb. [DATUM/ZEIT_1], behandelt in der [ORGANISATION_1].",
   "mapping": {
-    "[NAME_1]": "Max Mustermann",
+    "[NAME_1]": "Patient Max Mustermann",
     "[DATUM/ZEIT_1]": "15.03.1980",
-    "[ADRESSE/ORT_1]": "der Charité"
+    "[ORGANISATION_1]": "Charité"
   }
 }
 ```
+
+Das Anrede-Muster `anrede_name` fasst `Patient + Name` zusammen; die deutsche
+spaCy-NER erkennt „Charité" als Organisation. Ohne Anrede bleibt der Name
+isoliert (z. B. nur `Max Mustermann`).
 
 ---
 
@@ -115,6 +123,19 @@ Alle Patterns und Entitäten sind über das Admin-Interface konfigurierbar.
 
 ## API
 
+> **Authentifizierung:** Alle `/api/v1/*`-Endpunkte (außer `/health`) verlangen
+> einen API-Schlüssel. Schlüssel werden im Admin-Interface unter
+> **API-Schlüssel** erzeugt (Bezeichnung pro App, mehrere Schlüssel möglich).
+> Der Klartext wird **nur einmal** beim Erzeugen angezeigt. Solange **kein
+> aktiver Schlüssel** existiert, antwortet die API mit **HTTP 401**
+> (Fail-Closed). Der Schlüssel wird als Header mitgeschickt:
+>
+> ```bash
+> curl -H "Authorization: Bearer eg_…" …
+> # alternativ:
+> curl -H "X-API-Key: eg_…" …
+> ```
+
 ### `POST /api/v1/sanitize`
 
 Anonymisiert den übergebenen Text.
@@ -142,7 +163,7 @@ Anonymisiert den übergebenen Text.
 
 Jede maskierte Entität erhält einen eindeutigen, durchnummerierten Platzhalter (z.B. `[EMAIL_1]`, `[EMAIL_2]` bei zwei E-Mail-Adressen im selben Text). Das `mapping` bildet jeden Platzhalter auf seinen Originalwert ab und erlaubt so eine spätere De-Anonymisierung des Textes.
 
-**Fehlerverhalten:** Bei einem internen Fehler gibt der Dienst HTTP 500 zurück und lässt den Text **nicht** unverarbeitet durch (Fail-Closed-Prinzip).
+**Fehlerverhalten:** Ohne gültigen API-Schlüssel HTTP 401; bei einem internen Fehler gibt der Dienst HTTP 500 zurück und lässt den Text **nicht** unverarbeitet durch (Fail-Closed-Prinzip).
 
 ---
 
@@ -153,17 +174,22 @@ Lädt alle Patterns neu aus der Datenbank — ohne Neustart.
 Nach Änderungen im Admin-Interface diesen Endpoint aufrufen, um die neuen Patterns sofort zu aktivieren.
 
 ```bash
-curl -X POST http://localhost:9500/api/v1/reload
+curl -X POST http://localhost:9500/api/v1/reload \
+  -H "Authorization: Bearer eg_…"
 ```
 
 **Response:**
 ```json
 {
   "success": true,
-  "recognizers_count": 4,
-  "message": "Successfully reloaded 4 recognizers from database"
+  "recognizers_count": 9,
+  "message": "Successfully reloaded 9 recognizers from database"
 }
 ```
+
+`recognizers_count` ist die Anzahl der geladenen Presidio-Recognizer (ein
+`PatternRecognizer` je Entität mit Mustern plus die Standard-Engines) und
+damit ein grober Indikator, kein exakter Entitätszähler.
 
 ---
 
@@ -192,7 +218,47 @@ Das Admin-Interface verwaltet Entitäten, ihre Muster und optional zuschaltbare 
 - **Kontextwörter** — Wörter, die den Erkennungs-Score boosten, wenn sie im Text in der Nähe stehen
 - **Muster-Tester** — Regex testen, bevor sie aktiv werden
 - **Modelle** — optionale Transformer-Modelle per Schalter zuschalten
+- **Ausnahmeliste** — Werte, die grundsätzlich **nie** maskiert werden (z. B. ein Firmenname, der fälschlich als Person/Organisation erkannt wird)
+- **API-Schlüssel** — Zugangsschlüssel für die JSON-API (pro App, mehrere möglich), an-/ausschaltbar, einmalige Klartext-Anzeige
+- **Benutzer** — weitere Konten anlegen (nur Admins)
+- **Audit-Log** — wer/wann/was geändert hat (nur Admins)
+- **Tracing** — inhaltsfreie Anfrage-Metadaten (nur Admins)
 - **Passwort ändern** — unter Profil
+
+#### Rollen
+
+Es gibt zwei Rollen:
+
+| Rolle | Darf |
+|-------|------|
+| **Admin** | alles: konfigurieren, Benutzer verwalten, Audit/Tracing einsehen |
+| **Viewer** | nur ansehen — keine Änderungen (der Server lehnt Mutationen mit 403 ab) |
+
+Der per Migration angelegte `admin` ist **Admin**. Weitere Konten werden unter
+**Benutzer** angelegt; Admins können die Rolle ändern, Passwörter zurücksetzen,
+Konten deaktivieren/löschen. Der eigene Zugang und der letzte aktive Admin
+können nicht entfernt oder herabgestuft werden.
+
+#### Audit-Log
+
+Das **Audit-Log** protokolliert Konfigurationsänderungen (Entitäten, Muster,
+Kontextwörter, Ausnahmeliste, API-Schlüssel, Modelle, Benutzer) sowie Logins —
+**auch fehlgeschlagene**. Es speichert nur *wer/wann/was*, **nie die
+geänderten Werte**.
+
+#### Tracing (inhaltsfrei)
+
+Das **Tracing** protokolliert pro Anonymisierungs-Anfrage nur Metadaten:
+Zeit, App/Key-Präfix, Eingabelänge, Anzahl und Typ der Maskierungen, Dauer und
+Status. **Es werden bewusst keine Texte, Originalwerte oder das `mapping`
+gespeichert.** Steuerung per Umgebungsvariable; Einträge werden nach
+`TRACE_RETENTION_DAYS` Tagen beim Start automatisch gelöscht.
+
+Für Tests gibt es unter `http://localhost:9500/admin/sanitize` eine
+Testseite (nur für eingeloggte Nutzer): links Text eingeben oder Datei laden,
+rechts erscheint live die anonymisierte Version (inkl. Hervorhebung der
+Platzhalter, Hover zeigt den Originalwert). Die Seite nutzt die Admin-Session
+statt eines API-Schlüssels — im Browser liegt also kein Schlüssel.
 
 ### Reload nach Änderungen
 
@@ -232,13 +298,18 @@ Vollständige Anleitung inkl. Filter-Code, Konfiguration und Docker-Setup: **[do
 
 1. Filter-Code aus `docs/OpenWebUI.md` in OpenWebUI unter **Settings → Functions** einfügen
 2. Als globalen Filter aktivieren
-3. `api_url` auf den EntityGuard-Dienst setzen:
+3. `api_url` auf den EntityGuard-Dienst setzen **und** `api_key` auf einen im Admin-Interface erzeugten Schlüssel:
 
 | Szenario | `api_url` |
 |----------|-----------|
 | Lokal (kein Docker) | `http://localhost:9500/api/v1/sanitize` |
 | Docker, gleiches Netzwerk | `http://entityguard:9500/api/v1/sanitize` |
 | Docker, anderes Netzwerk | `http://host.docker.internal:9500/api/v1/sanitize` |
+
+Optional kann der Filter die Platzhalter in der LLM-Antwort clientseitig wieder
+durch die Originalwerte ersetzen (De-Anonymisierung über das `mapping`); das
+LLM sieht die Klardaten dabei nie. Details und Code:
+[docs/OpenWebUI.md](docs/OpenWebUI.md#antwort-de-anonymisierung-mit-dem-mapping).
 
 ---
 
@@ -277,6 +348,9 @@ Das `docker-compose.yml` bindet das `data/`-Verzeichnis als Volume ein. Die SQLi
 | Variable | Beschreibung | Default |
 |----------|--------------|---------|
 | `PYTHONUNBUFFERED` | Log-Ausgabe direkt in Container-Logs | `1` |
+| `TRACE_ENABLED` | Inhaltsfreies Anfragen-Tracing an/aus (`true`/`false`) | `true` |
+| `TRACE_RETENTION_DAYS` | Aufbewahrung der Trace-Einträge in Tagen | `7` |
+| `TRACE_HMAC_SECRET` | Secret für den optionalen keyed Input-Hash (nur wenn gesetzt wird gehasht) | – |
 | `BERT_NER_MODEL` | HuggingFace-Modell (nur relevant ohne DB, z. B. Benchmark-Script; muss in der Registry sein) | `fhswf/bert_de_ner` |
 | `BERT_NER_DEVICE` | Device erzwingen (`cpu`, `cuda`, `cuda:0`), sonst Auto-Erkennung | automatisch |
 | `BERT_NER_ENABLED` | Fallback ohne DB-Session (Benchmark-Script) | `false` |

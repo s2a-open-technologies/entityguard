@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+
+{% block title %}API-Schlüssel{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>API-Schlüssel</h1>
+</div>
+
+<p class="help-text">
+    API-Schlüssel sichern die JSON-API (<code>/api/v1/sanitize</code> und <code>/api/v1/reload</code>).
+    Jede App bekommt eine Bezeichnung und einen eigenen Schlüssel; mehrere Schlüssel pro App sind möglich.
+    Solange kein aktiver Schlüssel existiert, lehnt die API jeden Aufruf mit <strong>HTTP 401</strong> ab.
+    Der Schlüssel wird <strong>nur einmal</strong> beim Erzeugen angezeigt und kann später nicht mehr
+    eingesehen werden – geht er verloren, einen neuen anlegen.
+</p>
+
+{% if new_api_key %}
+<div class="alert alert-success">
+    <p><strong>Neuer API-Schlüssel erzeugt.</strong> Jetzt kopieren – er wird nicht erneut angezeigt:</p>
+    <p><code class="api-key-value">{{ new_api_key }}</code></p>
+</div>
+{% endif %}
+
+<div class="section">
+    {% if user.role == 'admin' %}
+    <form method="POST" action="/admin/api-keys/create" class="form-inline">
+        <div class="form-group flex-grow">
+            <input type="text" name="name" placeholder="Bezeichnung (z. B. 'OpenWebUI')" required>
+        </div>
+        <button type="submit" class="btn btn-primary btn-sm">Schlüssel erzeugen</button>
+    </form>
+    {% endif %}
+
+    {% if api_keys %}
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Bezeichnung</th>
+                <th>Schlüssel</th>
+                <th>Erstellt</th>
+                <th>Zuletzt benutzt</th>
+                <th>Status</th>
+                <th>Aktionen</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for key in api_keys %}
+            <tr>
+                <td>{{ key.name }}</td>
+                <td><code>{{ key.key_prefix }}…</code></td>
+                <td>{{ key.created_at.strftime('%Y-%m-%d %H:%M') if key.created_at else '-' }}</td>
+                <td>{{ key.last_used_at.strftime('%Y-%m-%d %H:%M') if key.last_used_at else 'nie' }}</td>
+                <td>
+                    <span class="badge {% if key.is_active %}badge-success{% else %}badge-secondary{% endif %}">
+                        {% if key.is_active %}Aktiv{% else %}Inaktiv{% endif %}
+                    </span>
+                </td>
+                <td class="actions">
+                    {% if user.role == 'admin' %}
+                    <form method="POST" action="/admin/api-keys/{{ key.id }}/toggle" class="inline-form">
+                        <button type="submit" class="btn btn-secondary btn-sm">
+                            {% if key.is_active %}Deaktivieren{% else %}Aktivieren{% endif %}
+                        </button>
+                    </form>
+                    <form method="POST" action="/admin/api-keys/{{ key.id }}/delete" class="inline-form" onsubmit="return confirm('Diesen Schlüssel wirklich löschen? Apps mit diesem Schlüssel verlieren sofort den Zugriff.')">
+                        <button type="submit" class="btn btn-danger btn-sm">Löschen</button>
+                    </form>
+                    {% else %}–{% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p class="empty-state">Noch keine API-Schlüssel angelegt. Erzeuge oben den ersten.</p>
+    {% endif %}
+</div>
+{% endblock %}

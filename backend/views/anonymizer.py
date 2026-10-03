@@ -17,13 +17,16 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 
 import logging
+import time
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from backend.components import CustomAnalyzer
 from backend.database import SessionLocal
+from backend.security import require_api_key
+from backend.tracing import record_trace
 
 # Router Blueprint
 entityguard_router = APIRouter(prefix="/api/v1", tags=["Anonymizer"])
@@ -90,7 +93,7 @@ class ReloadResponse(BaseModel):
 
 
 @entityguard_router.post("/reload", response_model=ReloadResponse)
-async def reload_patterns():
+async def reload_patterns(api_key=Depends(require_api_key)):
     """
     Reload pattern recognizers from the database.
 
@@ -98,11 +101,14 @@ async def reload_patterns():
     the database via the admin interface. It clears the cached
     analyzers and reloads from the database on next request.
 
+    Requires a valid API key (see the API-keys page in the admin UI).
+
     Returns:
         ReloadResponse: Status of the reload operation.
 
     Raises:
-        HTTPException: Status code 500 if the reload fails.
+        HTTPException: Status code 401 if no valid API key is supplied,
+            status code 500 if the reload fails.
     """
     global _analyzer
     try:
@@ -130,7 +136,7 @@ async def reload_patterns():
 
 
 @entityguard_router.post("/sanitize", response_model=SanitizeResponse)
-async def sanitize(request: SanitizeRequest):
+async def sanitize(request: SanitizeRequest, api_key=Depends(require_api_key)):
     """
     Receive text and return the anonymized version along with a mapping.
 
@@ -139,6 +145,8 @@ async def sanitize(request: SanitizeRequest):
     placeholder to original value for each masked entity occurrence, allowing
     the masked text to be de-anonymized later.
 
+    Requires a valid API key (see the API-keys page in the admin UI).
+
     Args:
         request (SanitizeRequest): The sanitization request containing text.
 
@@ -146,14 +154,25 @@ async def sanitize(request: SanitizeRequest):
         SanitizeResponse: The anonymized text and the placeholder-to-original mapping.
 
     Raises:
-        HTTPException: Status code 500 if the sanitization process fails.
+        HTTPException: Status code 401 if no valid API key is supplied,
+            status code 500 if the sanitization process fails.
             Implements fail-closed principle - returns error instead of
             passing through unprocessed text.
     """
     try:
+        start = time.perf_counter()
         analyzer = _get_or_create_analyzer()
 
         sanitized_text, mapping = analyzer.process_text(request.text)
+
+        record_trace(
+            "api",
+            request.text,
+            mapping,
+            (time.perf_counter() - start) * 1000,
+            True,
+            api_key_prefix=(api_key or {}).get("key_prefix"),
+        )
 
         return SanitizeResponse(
             sanitized_text=sanitized_text,

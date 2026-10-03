@@ -17,4 +17,5 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 
 from .anonymizer import entityguard_router
-from .public import public_router
+
+__all__ = ["entityguard_router"]

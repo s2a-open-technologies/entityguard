@@ -17,9 +17,13 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 
 from .database import SessionLocal, engine, get_db
-from .models import AdminUser, Base, ContextWordModel, DetectorModel, EntityModel, PatternModel
+from .models import (
+    AdminUser, ApiKeyModel, AuditLogModel, Base, ContextWordModel,
+    DetectorModel, EntityModel, PatternModel, RequestTraceModel,
+)
 
 __all__ = [
     "SessionLocal", "engine", "get_db",
-    "Base", "AdminUser", "ContextWordModel", "DetectorModel", "EntityModel", "PatternModel",
+    "Base", "AdminUser", "ApiKeyModel", "AuditLogModel", "ContextWordModel",
+    "DetectorModel", "EntityModel", "PatternModel", "RequestTraceModel",
 ]

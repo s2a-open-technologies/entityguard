@@ -17,6 +17,11 @@ import logging
 from pydantic import BaseModel, Field
 from typing import Optional, Dict, Any
 
+# Hinweis: Die API liefert zusätzlich ein `mapping` (Platzhalter -> Originalwert),
+# das hier bewusst NICHT verwendet wird - das LLM soll nur den maskierten Text
+# sehen. Für eine spätere De-Anonymisierung müsste der Aufrufer das Mapping
+# selbst aufbewahren.
+
 logger = logging.getLogger(__name__)
 
 
@@ -41,11 +46,16 @@ class Filter:
 
         Attributes:
             api_url (str): URL of the EntityGuard sanitization endpoint.
+            api_key (str): API key created in the EntityGuard admin UI.
             timeout (int): Timeout in seconds for the API request.
         """
         api_url: str = Field(
             default="http://localhost:9500/api/v1/sanitize",
             description="EntityGuard API URL"
+        )
+        api_key: str = Field(
+            default="",
+            description="EntityGuard API key (create under API-Schlüssel in the admin UI)"
         )
         timeout: int = Field(
             default=5,
@@ -95,6 +105,7 @@ class Filter:
             response = requests.post(
                 self.valves.api_url,
                 json=payload,
+                headers={"Authorization": f"Bearer {self.valves.api_key}"},
                 timeout=self.valves.timeout
             )
 
@@ -145,7 +156,7 @@ Der Filter wird auf **alle Chat-Anfragen** angewendet, unabhängig vom verwendet
 **Schritte:**
 
 1. Gehe zu **Settings** → **Functions**
-2. Suche den `Health Guardrail Filter` in der Liste
+2. Suche den `EntityGuard Filter` in der Liste
 3. Klicke auf das **Zahnrad-Symbol** (Einstellungen) neben dem Filter
 4. Aktiviere die Option **Global** (bzw. **Enable as global filter**)
 5. Konfiguriere die **Valves** (Einstellungen):
@@ -153,17 +164,21 @@ Der Filter wird auf **alle Chat-Anfragen** angewendet, unabhängig vom verwendet
    | Einstellung | Beschreibung | Empfohlener Wert (Docker) |
    |-------------|--------------|---------------------------|
    | `api_url` | URL des EntityGuard-Dienstes | `http://host.docker.internal:9500/api/v1/sanitize` |
+   | `api_key` | API-Schlüssel aus dem Admin-UI (**API-Schlüssel**) | `eg_…` |
    | `timeout` | Timeout in Sekunden | `5` |
 
 6. Klicke auf **Save**
 
-**Hinweis zur `api_url`:**
+**Hinweis zu `api_url` und `api_key`:**
 
 | Szenario | `api_url` |
 |----------|-----------|
 | OpenWebUI läuft **lokal** (nicht in Docker) | `http://localhost:9500/api/v1/sanitize` |
 | OpenWebUI läuft **in Docker** (gleiches Netzwerk) | `http://entityguard:9500/api/v1/sanitize` |
 | OpenWebUI läuft **in Docker** (anderes Netzwerk) | `http://host.docker.internal:9500/api/v1/sanitize` |
+
+Den `api_key` erzeugst du in EntityGuard unter **API-Schlüssel** (der Klartext
+wird nur einmal angezeigt). Ohne aktiven Schlüssel antwortet die API mit 401.
 
 ---
 
@@ -177,17 +192,146 @@ Der Filter wird **nur für bestimmte Modelle** angewendet. Dies ist nützlich, w
 2. Wähle das gewünschte Modell aus (z.B. `llama3`, `gpt-4`, etc.)
 3. Klicke auf das **Zahnrad-Symbol** oder **Edit** beim Modell
 4. Suche den Abschnitt **Functions** / **Filter**
-5. Wähle `Health Guardrail Filter` aus der Dropdown-Liste
+5. Wähle `EntityGuard Filter` aus der Dropdown-Liste
 6. Konfiguriere die **Valves** für dieses Modell:
 
    ```
     api_url: http://host.docker.internal:9500/api/v1/sanitize
+    api_key: eg_…
    timeout: 5
    ```
 
 7. Klicke auf **Save**
 
 **Wiederhole dies für jedes Modell**, das den Filter verwenden soll.
+
+---
+
+## Antwort-De-Anonymisierung mit dem `mapping`
+
+Standardmäßig sieht das LLM nur den maskierten Text und antwortet mit den
+Platzhaltern (`[NAME_1]` …). Wenn der Nutzer in der Antwort wieder die
+Originalwerte sehen soll, kann der Filter diese clientseitig zurücksetzen —
+das LLM bekommt die Klardaten dabei **nie** zu sehen.
+
+Dafür nutzt man zwei Haken:
+
+- `inlet()` läuft **vor** dem LLM, maskiert die Nachricht und legt das von
+  EntityGuard gelieferte `mapping` (Platzhalter → Original) im speziellen
+  `__metadata__`-Dict ab.
+- `outlet()` läuft **nach** der LLM-Antwort und ersetzt die Platzhalter darin
+  wieder durch die Originalwerte.
+
+`__metadata__` wird pro Request durchgereicht, `outlet()` sieht also genau das
+`mapping` der aktuellen Anfrage.
+
+### Erweiterter Filter-Code
+
+```python
+import requests
+import logging
+from pydantic import BaseModel, Field
+from typing import Optional, Dict
+
+logger = logging.getLogger(__name__)
+
+
+def _restore(text: str, mapping: Dict[str, str]) -> str:
+    # Längste Platzhalter zuerst, damit z. B. [NAME_10] nicht in [NAME_1] zerfällt.
+    for placeholder in sorted(mapping, key=len, reverse=True):
+        text = text.replace(placeholder, mapping[placeholder])
+    return text
+
+
+class Filter:
+    class Valves(BaseModel):
+        api_url: str = Field(
+            default="http://localhost:9500/api/v1/sanitize",
+            description="EntityGuard API URL"
+        )
+        api_key: str = Field(
+            default="",
+            description="EntityGuard API key (create under API-Schlüssel in the admin UI)"
+        )
+        timeout: int = Field(
+            default=5,
+            description="Timeout in seconds for the security check"
+        )
+        restore_mapping: bool = Field(
+            default=True,
+            description="Platzhalter in der LLM-Antwort durch die Originalwerte ersetzen"
+        )
+
+    def __init__(self):
+        self.valves = self.Valves()
+
+    def inlet(
+        self,
+        body: Dict,
+        __metadata__: dict = None,
+        __user__: Optional[Dict] = None,
+    ) -> Dict:
+        messages = body.get("messages", [])
+        if not messages or messages[-1].get("role") != "user":
+            return body
+
+        user_text = messages[-1].get("content", "")
+        try:
+            response = requests.post(
+                self.valves.api_url,
+                json={"text": user_text},
+                headers={"Authorization": f"Bearer {self.valves.api_key}"},
+                timeout=self.valves.timeout,
+            )
+            response.raise_for_status()
+            data = response.json()
+            sanitized_text = data.get("sanitized_text")
+            if sanitized_text is None:
+                raise ValueError("Received invalid response")
+
+            body["messages"][-1]["content"] = sanitized_text
+
+            # mapping für die Rückübersetzung in outlet() merken (pro Request).
+            if __metadata__ is not None:
+                __metadata__["entityguard_mapping"] = data.get("mapping", {})
+
+            logger.info("Guardrail active: Text sanitized.")
+            return body
+
+        except Exception as e:
+            error_msg = f"Security check failed: {str(e)}"
+            logger.error(error_msg)
+            raise Exception(f"Privacy stop: {error_msg}")
+
+    def outlet(self, body: Dict, __metadata__: dict = None) -> Dict:
+        if not self.valves.restore_mapping or not __metadata__:
+            return body
+
+        mapping = __metadata__.get("entityguard_mapping") or {}
+        if not mapping:
+            return body
+
+        for message in body.get("messages", []):
+            if message.get("role") == "assistant" and isinstance(message.get("content"), str):
+                message["content"] = _restore(message["content"], mapping)
+        return body
+```
+
+### Einschränkungen
+
+- **`outlet()` läuft nicht für alle Pfade.** Es greift bei normalen
+  WebUI-Chats und beim Inline-Outlet von `/api/chat/completions`, **nicht**
+  aber bei `/api/chat/completed` (dort wird ein frisches `__metadata__` ohne
+  das `mapping` aufgebaut).
+- **Nur die aktuelle Anfrage.** `__metadata__` lebt pro Request. Platzhalter
+  aus früheren Nachrichten (Mehr-Turn-Verlauf) kennt `outlet()` nicht; dafür
+  bräuchte man ein persistentes Platzhalter-Register (z. B. serverseitig in
+  EntityGuard).
+- **Nur die Ausgabe.** Die Rückübersetzung ist rein clientseitig. Das LLM hat
+  die Originalwerte nie gesehen; nur der Nutzer sieht sie wieder.
+- Wer die De-Anonymisierung nicht braucht, lässt `restore_mapping` einfach auf
+  `false` — dann bleibt es beim reinen Einweg-Maskieren aus dem
+  [Filter-Code](#filter-code) oben.
 
 ---
 
@@ -239,6 +383,7 @@ networks:
 **Filter-Konfiguration in OpenWebUI:**
 
 - `api_url`: `http://entityguard:9500/api/v1/sanitize`
+- `api_key`: `eg_…` (unter **API-Schlüssel** im Admin-UI erzeugen)
 - `timeout`: `5`
 
 ---
@@ -259,9 +404,12 @@ networks:
 
   - Überprüfe die **Logs** des EntityGuard-Dienstes: `docker logs entityguard`
 - Erhöhe ggf. das `timeout` auf `10` Sekunden
+- Prüfe, ob ein **aktiver API-Schlüssel** existiert und in den Valves als
+  `api_key` eingetragen ist (sonst HTTP 401)
 - Teste den Endpoint manuell:
   ```bash
   curl -X POST http://localhost:9500/api/v1/sanitize \
     -H "Content-Type: application/json" \
+    -H "Authorization: Bearer eg_…" \
     -d '{"text": "Test"}'
   ```

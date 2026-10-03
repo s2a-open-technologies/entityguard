@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+
+{% block title %}Audit-Log{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Audit-Log</h1>
+</div>
+
+<p class="help-text">
+    Wer/wann/was: Änderungen an Entitäten, Mustern, Kontextwörtern, Ausnahmeliste, API-Schlüsseln,
+    Modellen und Benutzern sowie Logins (auch fehlgeschlagene). Die Einträge sind nur anhängbar und
+    speichern keine geänderten Werte.
+</p>
+
+<div class="section">
+    <form method="GET" action="/admin/audit" class="form-inline">
+        <div class="form-group flex-grow">
+            <input type="text" name="actor" value="{{ filter_actor }}" placeholder="Akteur (Benutzername)">
+        </div>
+        <div class="form-group">
+            <select name="action">
+                <option value="">Alle Aktionen</option>
+                {% for a in ['create', 'update', 'delete', 'toggle', 'login', 'login_failed', 'password_change'] %}
+                <option value="{{ a }}" {% if filter_action == a %}selected{% endif %}>{{ a }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="form-group">
+            <select name="target_type">
+                <option value="">Alle Typen</option>
+                {% for t in ['entity', 'pattern', 'context_word', 'allowed_value', 'api_key', 'detector_model', 'admin_user'] %}
+                <option value="{{ t }}" {% if filter_target_type == t %}selected{% endif %}>{{ t }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <button type="submit" class="btn btn-secondary btn-sm">Filtern</button>
+        <a href="/admin/audit" class="btn btn-secondary btn-sm">Zurücksetzen</a>
+    </form>
+
+    {% if entries %}
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Zeit</th>
+                <th>Akteur</th>
+                <th>Aktion</th>
+                <th>Typ</th>
+                <th>Beschreibung</th>
+                <th>IP</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for e in entries %}
+            <tr>
+                <td>{{ e.created_at.strftime('%Y-%m-%d %H:%M:%S') if e.created_at else '-' }}</td>
+                <td>{{ e.actor_username or '–' }}</td>
+                <td><code>{{ e.action }}</code></td>
+                <td>{{ e.target_type or '–' }}</td>
+                <td>{{ e.summary }}</td>
+                <td>{{ e.ip_address or '–' }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    <p class="help-text">
+        {{ total }} Einträge · Seite {{ page }} von {{ total_pages }}
+        {% if page > 1 %} · <a href="/admin/audit?actor={{ filter_actor }}&action={{ filter_action }}&target_type={{ filter_target_type }}&page={{ page - 1 }}">Zurück</a>{% endif %}
+        {% if page < total_pages %} · <a href="/admin/audit?actor={{ filter_actor }}&action={{ filter_action }}&target_type={{ filter_target_type }}&page={{ page + 1 }}">Weiter</a>{% endif %}
+    </p>
+    {% else %}
+    <p class="empty-state">Keine Einträge gefunden.</p>
+    {% endif %}
+</div>
+{% endblock %}

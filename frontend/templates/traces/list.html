@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+
+{% block title %}Anfragen-Tracing{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Anfragen-Tracing</h1>
+</div>
+
+<p class="help-text">
+    Inhaltsfreie Protokollierung der Anonymisierungs-Anfragen: Zeit, App/Key, Eingabelänge, Anzahl und
+    Typ der Maskierungen, Dauer und Status. <strong>Es werden bewusst keine Texte, Originalwerte oder
+    das Mapping gespeichert.</strong> Einträge werden nach {{ retention_days }} Tagen automatisch gelöscht.
+    {% if not trace_enabled %}<br><strong>Tracing ist derzeit per Konfiguration deaktiviert.</strong>{% endif %}
+</p>
+
+<div class="section">
+    <form method="GET" action="/admin/traces" class="form-inline">
+        <div class="form-group">
+            <select name="source">
+                <option value="">Alle Quellen</option>
+                <option value="api" {% if filter_source == 'api' %}selected{% endif %}>API</option>
+            </select>
+        </div>
+        <button type="submit" class="btn btn-secondary btn-sm">Filtern</button>
+        <a href="/admin/traces" class="btn btn-secondary btn-sm">Zurücksetzen</a>
+    </form>
+
+    {% if traces %}
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Zeit</th>
+                <th>Quelle</th>
+                <th>App / Key</th>
+                <th>Länge</th>
+                <th>Maskierungen</th>
+                <th>Entitäten</th>
+                <th>Dauer</th>
+                <th>Status</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for t in traces %}
+            <tr>
+                <td>{{ t.row.created_at.strftime('%Y-%m-%d %H:%M:%S') if t.row.created_at else '-' }}</td>
+                <td><code>{{ t.row.source }}</code></td>
+                <td>{{ t.row.api_key_prefix or '–' }}</td>
+                <td>{{ t.row.input_length }}</td>
+                <td>{{ t.row.mask_count }}</td>
+                <td>
+                    {% if t.counts %}
+                    {% for name, count in t.counts.items() %}
+                    <span class="source-chip">{{ name }}: {{ count }}</span>
+                    {% endfor %}
+                    {% else %}–{% endif %}
+                </td>
+                <td>{% if t.row.latency_ms is not none %}{{ '%.0f'|format(t.row.latency_ms) }} ms{% else %}–{% endif %}</td>
+                <td>
+                    <span class="badge {% if t.row.success %}badge-success{% else %}badge-warning{% endif %}">
+                        {% if t.row.success %}OK{% else %}Fehler{% endif %}
+                    </span>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    <p class="help-text">
+        {{ total }} Einträge · Seite {{ page }} von {{ total_pages }}
+        {% if page > 1 %} · <a href="/admin/traces?source={{ filter_source }}&page={{ page - 1 }}">Zurück</a>{% endif %}
+        {% if page < total_pages %} · <a href="/admin/traces?source={{ filter_source }}&page={{ page + 1 }}">Weiter</a>{% endif %}
+    </p>
+    {% else %}
+    <p class="empty-state">Keine Anfragen protokolliert.</p>
+    {% endif %}
+</div>
+{% endblock %}

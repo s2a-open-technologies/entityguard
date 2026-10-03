@@ -22,7 +22,11 @@ from typing import Optional
 import bcrypt
 from sqlalchemy.orm import Session
 
-from .models import AdminUser, AllowedValueModel, ContextWordModel, DetectorModel, EntityModel, PatternModel
+from .models import (
+    AdminUser, AllowedValueModel, ApiKeyModel, AuditLogModel,
+    ContextWordModel, DetectorModel, EntityModel, PatternModel,
+    RequestTraceModel,
+)
 
 
 # ============================================================================
@@ -180,14 +184,63 @@ def get_admin_user_by_username(db: Session, username: str) -> Optional[AdminUser
     return db.query(AdminUser).filter(AdminUser.username == username).first()
 
 
-def create_admin_user(db: Session, username: str, password: str) -> AdminUser:
+def create_admin_user(db: Session, username: str, password: str, role: str = "admin") -> AdminUser:
     """Create a new admin user with hashed password."""
     password_hash = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
-    user = AdminUser(username=username, password_hash=password_hash)
+    user = AdminUser(username=username, password_hash=password_hash, role=role)
     db.add(user)
     db.commit()
     db.refresh(user)
     return user
+
+
+def get_admin_users(db: Session) -> list[AdminUser]:
+    """Get all admin users, ordered by username."""
+    return db.query(AdminUser).order_by(AdminUser.username).all()
+
+
+def count_active_admins(db: Session) -> int:
+    """Count active users with the 'admin' role."""
+    return (
+        db.query(AdminUser)
+        .filter(AdminUser.is_active.is_(True), AdminUser.role == "admin")
+        .count()
+    )
+
+
+def set_admin_user_active(db: Session, user_id: int, is_active: bool) -> Optional[AdminUser]:
+    """Activate or deactivate an admin user."""
+    user = get_admin_user(db, user_id)
+    if not user:
+        return None
+
+    user.is_active = is_active
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+def update_admin_role(db: Session, user_id: int, role: str) -> Optional[AdminUser]:
+    """Change an admin user's role ('admin' or 'viewer')."""
+    user = get_admin_user(db, user_id)
+    if not user:
+        return None
+
+    user.role = role
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+def delete_admin_user(db: Session, user_id: int) -> bool:
+    """Delete an admin user."""
+    user = get_admin_user(db, user_id)
+    if not user:
+        return False
+
+    db.delete(user)
+    db.commit()
+    return True
 
 
 def update_admin_password(db: Session, user_id: int, new_password: str) -> Optional[AdminUser]:
@@ -342,3 +395,205 @@ def delete_allowed_value(db: Session, allowed_value_id: int) -> bool:
     db.delete(allowed_value)
     db.commit()
     return True
+
+
+# ============================================================================
+# API Key CRUD
+# ============================================================================
+
+def get_api_keys(db: Session) -> list[ApiKeyModel]:
+    """Get all API keys, newest first."""
+    return db.query(ApiKeyModel).order_by(ApiKeyModel.created_at.desc()).all()
+
+
+def get_api_key(db: Session, api_key_id: int) -> Optional[ApiKeyModel]:
+    """Get an API key by ID."""
+    return db.query(ApiKeyModel).filter(ApiKeyModel.id == api_key_id).first()
+
+
+def get_active_api_keys(db: Session) -> list[ApiKeyModel]:
+    """Get all active API keys (used for request authentication)."""
+    return db.query(ApiKeyModel).filter(ApiKeyModel.is_active.is_(True)).all()
+
+
+def create_api_key(db: Session, name: str, key_prefix: str, key_hash: str) -> ApiKeyModel:
+    """Create a new API key row (label + hash only; the plaintext is shown once)."""
+    api_key = ApiKeyModel(name=name, key_prefix=key_prefix, key_hash=key_hash)
+    db.add(api_key)
+    db.commit()
+    db.refresh(api_key)
+    return api_key
+
+
+def set_api_key_active(db: Session, api_key_id: int, is_active: bool) -> Optional[ApiKeyModel]:
+    """Activate or deactivate an API key."""
+    api_key = get_api_key(db, api_key_id)
+    if not api_key:
+        return None
+
+    api_key.is_active = is_active
+    db.commit()
+    db.refresh(api_key)
+    return api_key
+
+
+def touch_api_key(db: Session, api_key_id: int) -> None:
+    """Record a successful use of an API key (best-effort)."""
+    api_key = get_api_key(db, api_key_id)
+    if not api_key:
+        return
+
+    api_key.last_used_at = datetime.utcnow()
+    db.commit()
+
+
+def delete_api_key(db: Session, api_key_id: int) -> bool:
+    """Delete an API key."""
+    api_key = get_api_key(db, api_key_id)
+    if not api_key:
+        return False
+
+    db.delete(api_key)
+    db.commit()
+    return True
+
+# ============================================================================
+# Audit Log CRUD
+# ============================================================================
+
+def log_audit(
+    db: Session,
+    action: str,
+    summary: str,
+    actor_id: Optional[int] = None,
+    actor_username: Optional[str] = None,
+    target_type: Optional[str] = None,
+    target_id: Optional[int] = None,
+    target_label: Optional[str] = None,
+    ip_address: Optional[str] = None,
+) -> AuditLogModel:
+    """Append one entry to the audit log (never stores changed values)."""
+    entry = AuditLogModel(
+        action=action,
+        summary=summary,
+        actor_id=actor_id,
+        actor_username=actor_username,
+        target_type=target_type,
+        target_id=target_id,
+        target_label=target_label,
+        ip_address=ip_address,
+    )
+    db.add(entry)
+    db.commit()
+    db.refresh(entry)
+    return entry
+
+
+def get_audit_logs(
+    db: Session,
+    limit: int = 100,
+    offset: int = 0,
+    actor_username: Optional[str] = None,
+    action: Optional[str] = None,
+    target_type: Optional[str] = None,
+) -> list[AuditLogModel]:
+    """Get audit entries, newest first, with optional filters."""
+    query = db.query(AuditLogModel)
+    if actor_username:
+        query = query.filter(AuditLogModel.actor_username == actor_username)
+    if action:
+        query = query.filter(AuditLogModel.action == action)
+    if target_type:
+        query = query.filter(AuditLogModel.target_type == target_type)
+    return (
+        query.order_by(AuditLogModel.created_at.desc(), AuditLogModel.id.desc())
+        .offset(offset)
+        .limit(limit)
+        .all()
+    )
+
+
+def count_audit_logs(
+    db: Session,
+    actor_username: Optional[str] = None,
+    action: Optional[str] = None,
+    target_type: Optional[str] = None,
+) -> int:
+    """Count audit entries matching the same filters as get_audit_logs."""
+    query = db.query(AuditLogModel)
+    if actor_username:
+        query = query.filter(AuditLogModel.actor_username == actor_username)
+    if action:
+        query = query.filter(AuditLogModel.action == action)
+    if target_type:
+        query = query.filter(AuditLogModel.target_type == target_type)
+    return query.count()
+
+
+# ============================================================================
+# Request Trace CRUD (content-free)
+# ============================================================================
+
+def create_request_trace(
+    db: Session,
+    source: str,
+    input_length: int,
+    mask_count: int,
+    entity_counts: Optional[str] = None,
+    latency_ms: Optional[float] = None,
+    success: bool = True,
+    api_key_prefix: Optional[str] = None,
+    input_hmac: Optional[str] = None,
+) -> RequestTraceModel:
+    """Append one content-free request trace row."""
+    trace = RequestTraceModel(
+        source=source,
+        input_length=input_length,
+        mask_count=mask_count,
+        entity_counts=entity_counts,
+        latency_ms=latency_ms,
+        success=success,
+        api_key_prefix=api_key_prefix,
+        input_hmac=input_hmac,
+    )
+    db.add(trace)
+    db.commit()
+    db.refresh(trace)
+    return trace
+
+
+def get_request_traces(
+    db: Session,
+    limit: int = 100,
+    offset: int = 0,
+    source: Optional[str] = None,
+) -> list[RequestTraceModel]:
+    """Get trace rows, newest first, with an optional source filter."""
+    query = db.query(RequestTraceModel)
+    if source:
+        query = query.filter(RequestTraceModel.source == source)
+    return (
+        query.order_by(RequestTraceModel.created_at.desc(), RequestTraceModel.id.desc())
+        .offset(offset)
+        .limit(limit)
+        .all()
+    )
+
+
+def count_request_traces(db: Session, source: Optional[str] = None) -> int:
+    """Count trace rows matching the same filters as get_request_traces."""
+    query = db.query(RequestTraceModel)
+    if source:
+        query = query.filter(RequestTraceModel.source == source)
+    return query.count()
+
+
+def delete_old_request_traces(db: Session, cutoff: datetime) -> int:
+    """Delete trace rows created before `cutoff`; returns the number removed."""
+    deleted = (
+        db.query(RequestTraceModel)
+        .filter(RequestTraceModel.created_at < cutoff)
+        .delete(synchronize_session=False)
+    )
+    db.commit()
+    return deleted

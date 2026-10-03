@@ -56,10 +56,19 @@ Service listens on `http://localhost:9500` (`main.py` hardcodes port `9500`).
 - `backend/database/` — SQLAlchemy models, CRUD, seeding.
 - `frontend/templates/` + `frontend/static/` — Jinja2 templates and CSS/JS assets (served at `/static`).
 - Project layout: `main.py` stays in the root; backend code lives in `backend/`, frontend assets in `frontend/`.
-- `GET /sanitize` (in `backend/views/public.py`) is a **public, login-free** split-view page; it still passes the user context so logged-in admins keep the sidebar.
+- `GET /admin/sanitize` (in `backend/admin/routes.py`) is the login-protected split-view page (redirects to `/admin/login` when unauthenticated). Its JS calls the same-origin session-authenticated proxy `POST /admin/sanitize/api` — no API key ever reaches the browser. The old public `public_router` / `backend/views/public.py` was removed.
+
+## Users, Roles, Audit & Tracing
+
+- **Roles** live in `admin_users.role` (`admin` | `viewer`). `require_admin` (in `backend/admin/auth.py`) wraps `require_auth` and returns 403 for viewers. All mutating config routes use `require_admin`; read routes and the sanitize page/proxy use `require_auth`; users/audit/traces are admin-only.
+- **User management** is `/admin/users` (create/toggle/role/reset-password/delete, `backend/database/crud.py`). Self-deactivation/deletion/role-change and removing the last active admin are blocked in the route handlers.
+- **Audit log** (`audit_log` table, migration `018`): append-only `log_audit(...)` calls record who/when/what for all mutating routes plus login and failed login. It never stores changed values. Page: `/admin/audit`.
+- **Request tracing** (`request_trace` table, migration `019`, `backend/tracing.py::record_trace`): content-free per-request metadata (source, key prefix, input length, mask/entity counts, latency, success, optional HMAC). Hooked only into `/api/v1/sanitize` — the admin sanitize page/proxy is deliberately **not** traced (live preview fires per keystroke pause and would flood the log). **Never** stores the text or the mapping. Controlled by `backend/config.py`: `TRACE_ENABLED` (default true), `TRACE_RETENTION_DAYS` (default 7, pruned on startup in `main.py`), `TRACE_HMAC_SECRET` (hash only written when set). Page: `/admin/traces`.
+- Sessions are still in-memory (`backend/admin/auth.py::_sessions`) — a restart logs everyone out.
 
 ## API / Runtime Gotchas
 
+- **API keys**: `/api/v1/sanitize` and `/api/v1/reload` require a key (`backend/security.py::require_api_key`), sent as `Authorization: Bearer <key>` or `X-API-Key`. Keys are created/managed in the admin UI (`/admin/api-keys`, table `api_keys`, bcrypt hash, plaintext shown once); only **active** DB keys count. With no active key the API returns **401** (fail-closed). `/health` stays open.
 - `/api/v1/sanitize` returns HTTP 500 on any processing error (fail-closed). It never returns raw text on failure.
 - `/api/v1/reload` rebuilds the singleton analyzer from the DB. Call this after editing patterns in the admin UI; otherwise edits are not reflected. The model toggles on `/admin/modelle` trigger the rebuild themselves.
 - The API namespace is `/api/v1/*` (e.g. `/api/v1/sanitize`), **not** `/api/v1/entityguard/*` — that path does not exist despite appearing in some older docs.
@@ -114,13 +123,14 @@ npm run build:css                  # rebuild admin.css after CSS changes
 # health check
 curl http://localhost:9500/health
 
-# sanitize
+# sanitize (create an API key first under /admin/api-keys)
 curl -s -X POST http://localhost:9500/api/v1/sanitize \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer eg_..." \
   -d '{"text": "Patient Max Mustermann, geb. 15.03.1980, AOK-versichert, Fallnr. 48291"}'
 
 # reload patterns after admin changes
-curl -X POST http://localhost:9500/api/v1/reload
+curl -X POST http://localhost:9500/api/v1/reload -H "Authorization: Bearer eg_..."
 ```
 
 ## References

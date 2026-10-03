@@ -14,6 +14,7 @@
         als Person oder Organisation erkannt werden.
     </p>
 
+    {% if user.role == 'admin' %}
     <form method="POST" action="/admin/allowlist/create" class="form-inline">
         <div class="form-group flex-grow">
             <input type="text" name="value" placeholder="Begriff (z. B. 'MedTech GmbH')" required>
@@ -23,6 +24,7 @@
         </div>
         <button type="submit" class="btn btn-primary btn-sm">Hinzufügen</button>
     </form>
+    {% endif %}
 
     {% if allowed_values %}
     <table class="data-table">
@@ -39,9 +41,11 @@
                 <td><code>{{ entry.value }}</code></td>
                 <td>{{ entry.description or '' }}</td>
                 <td class="actions">
+                    {% if user.role == 'admin' %}
                     <form method="POST" action="/admin/allowlist/{{ entry.id }}/delete" class="inline-form" onsubmit="return confirm('Diesen Eintrag wirklich löschen?');">
                         <button type="submit" class="btn btn-sm btn-danger">Löschen</button>
                     </form>
+                    {% else %}–{% endif %}
                 </td>
             </tr>
             {% endfor %}

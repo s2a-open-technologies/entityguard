@@ -207,7 +207,7 @@ document.addEventListener('DOMContentLoaded', function() {
         showStatus('Analysiert ...', false, true);
 
         try {
-            const response = await fetch('/api/v1/sanitize', {
+            const response = await fetch('/admin/sanitize/api', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ text: text })

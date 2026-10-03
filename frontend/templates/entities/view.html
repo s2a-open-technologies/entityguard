@@ -9,12 +9,14 @@
         <span>{{ entity.name }}</span>
     </div>
     <h1>{{ entity.name }}</h1>
+    {% if user.role == 'admin' %}
     <div class="header-actions">
         <a href="/admin/entities/{{ entity.id }}/edit" class="btn btn-secondary">Bearbeiten</a>
         <form method="POST" action="/admin/entities/{{ entity.id }}/delete" class="inline-form" onsubmit="return confirm('Diese Entität wirklich löschen? Muster und Kontextwörter werden mitgelöscht.');">
             <button type="submit" class="btn btn-danger">Löschen</button>
         </form>
     </div>
+    {% endif %}
 </div>
 
 <div class="detail-grid">
@@ -68,6 +70,7 @@
         <button type="button" class="tab-btn" data-tab="regex">Regex</button>
     </div>
 
+    {% if user.role == 'admin' %}
     <form method="POST" action="/admin/entities/{{ entity.id }}/patterns/create" class="form-inline" id="keyword-form">
         <div class="form-group">
             <input type="text" name="name" placeholder="Name des Musters" required>
@@ -101,6 +104,7 @@
         <button type="button" class="chip" data-regex="{{ tpl.regex }}" data-name="{{ tpl.name }}" title="{{ tpl.description }}">{{ tpl.label }}</button>
         {% endfor %}
     </div>
+    {% endif %}
 
     {% if patterns %}
     <table class="data-table">
@@ -122,10 +126,12 @@
                 </td>
                 <td>{{ pattern.score }}</td>
                 <td class="actions">
+                    {% if user.role == 'admin' %}
                     <a href="/admin/patterns/{{ pattern.id }}/edit" class="btn btn-sm btn-secondary">Bearbeiten</a>
                     <form method="POST" action="/admin/patterns/{{ pattern.id }}/delete" class="inline-form" onsubmit="return confirm('Dieses Muster wirklich löschen?');">
                         <button type="submit" class="btn btn-sm btn-danger">Löschen</button>
                     </form>
+                    {% else %}–{% endif %}
                 </td>
             </tr>
             {% endfor %}
@@ -143,21 +149,25 @@
         Mehrere Wörter können mit Komma getrennt auf einmal hinzugefügt werden.
     </p>
 
+    {% if user.role == 'admin' %}
     <form method="POST" action="/admin/entities/{{ entity.id }}/context/create" class="form-inline">
         <div class="form-group flex-grow">
             <input type="text" name="word" placeholder="Kontextwort (mehrere mit Komma trennen)" required>
         </div>
         <button type="submit" class="btn btn-primary btn-sm">Wort hinzufügen</button>
     </form>
+    {% endif %}
 
     {% if context_words %}
     <div class="tags">
         {% for cw in context_words %}
         <span class="tag">
             {{ cw.word }}
+            {% if user.role == 'admin' %}
             <form method="POST" action="/admin/context/{{ cw.id }}/delete" class="inline-form">
                 <button type="submit" class="tag-remove">&times;</button>
             </form>
+            {% endif %}
         </span>
         {% endfor %}
     </div>

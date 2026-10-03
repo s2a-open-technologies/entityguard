@@ -183,6 +183,39 @@ class AllowedValueModel(Base):
         return f"<AllowedValueModel(value='{self.value}')>"
 
 
+class ApiKeyModel(Base):
+    """
+    Model for an API key that grants access to the JSON API.
+
+    Keys are created in the admin UI (label + one-time plaintext display);
+    only the bcrypt hash is stored, so a lost key can never be recovered -
+    create a new one instead. Multiple keys may share the same label (e.g.
+    several devices of one app). The API rejects every request with HTTP 401
+    while no active key exists (fail-closed).
+
+    Attributes:
+        id: Primary key
+        name: Free-text label ("app name"), not unique
+        key_prefix: Recognizable prefix of the key for the list view (e.g. "eg_openwebui")
+        key_hash: Bcrypt hash of the full key
+        is_active: Whether the key is currently accepted
+        created_at: Timestamp of creation
+        last_used_at: Timestamp of the last successful API call (optional)
+    """
+    __tablename__ = "api_keys"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    key_prefix: Mapped[str] = mapped_column(String(120), nullable=False)
+    key_hash: Mapped[str] = mapped_column(String(128), nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    def __repr__(self) -> str:
+        return f"<ApiKeyModel(name='{self.name}', prefix='{self.key_prefix}', active={self.is_active})>"
+
+
 class AdminUser(Base):
     """
     Model for admin user authentication.
@@ -200,6 +233,76 @@ class AdminUser(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     username: Mapped[str] = mapped_column(String(50), unique=True, nullable=False)
     password_hash: Mapped[str] = mapped_column(String(128), nullable=False)
+    role: Mapped[str] = mapped_column(String(20), default="admin", nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     last_password_change: Mapped[datetime] = mapped_column(DateTime, nullable=True)
+
+class AuditLogModel(Base):
+    """
+    Append-only audit log of configuration changes and login events.
+
+    Records *who* changed *what* (entities, patterns, context words,
+    allow-list, API keys, detector models, users) and login successes/
+    failures. It never stores the changed values themselves.
+
+    Attributes:
+        id: Primary key
+        created_at: Timestamp of the event
+        actor_id: User ID of the actor (None for failed logins)
+        actor_username: Username of the actor (also set for failed logins)
+        action: create/update/delete/toggle/login/login_failed/password_change/logout
+        target_type: Affected object type (entity, pattern, ...), optional
+        target_id: Affected object ID, optional
+        target_label: Human-readable label of the target, optional
+        summary: Short human-readable description
+        ip_address: Client IP, optional
+    """
+    __tablename__ = "audit_log"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    actor_id: Mapped[int | None] = mapped_column(nullable=True)
+    actor_username: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    action: Mapped[str] = mapped_column(String(30), nullable=False)
+    target_type: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    target_id: Mapped[int | None] = mapped_column(nullable=True)
+    target_label: Mapped[str | None] = mapped_column(String(150), nullable=True)
+    summary: Mapped[str] = mapped_column(Text, nullable=False)
+    ip_address: Mapped[str | None] = mapped_column(String(45), nullable=True)
+
+
+class RequestTraceModel(Base):
+    """
+    Tracing-lite row for a single sanitize request.
+
+    Deliberately content-free: only metadata about the request (length,
+    number of masks, entity-type counts, latency, success) plus an optional
+    keyed hash (HMAC) of the input for correlation. It never stores the raw
+    text, the masked output or the placeholder->original mapping. Retention
+    is bounded by TRACE_RETENTION_DAYS.
+
+    Attributes:
+        id: Primary key
+        created_at: Timestamp of the request
+        api_key_prefix: Display prefix of the key used
+        source: Request origin (currently always "api")
+        input_length: Character length of the input
+        mask_count: Total number of masked entities
+        entity_counts: JSON mapping entity type -> count
+        latency_ms: Processing time in milliseconds
+        success: Whether processing succeeded
+        input_hmac: Keyed hash (HMAC-SHA256) of the input, optional
+    """
+    __tablename__ = "request_trace"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    api_key_prefix: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    source: Mapped[str] = mapped_column(String(20), nullable=False)
+    input_length: Mapped[int] = mapped_column(nullable=False)
+    mask_count: Mapped[int] = mapped_column(nullable=False, default=0)
+    entity_counts: Mapped[str | None] = mapped_column(Text, nullable=True)
+    latency_ms: Mapped[float | None] = mapped_column(nullable=True)
+    success: Mapped[bool] = mapped_column(Boolean, default=True)
+    input_hmac: Mapped[str | None] = mapped_column(String(64), nullable=True)

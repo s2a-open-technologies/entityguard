@@ -17,6 +17,6 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 
 from .routes import admin_router
-from .auth import get_current_user, require_auth
+from .auth import get_current_user, require_auth, require_admin
 
-__all__ = ["admin_router", "get_current_user", "require_auth"]
+__all__ = ["admin_router", "get_current_user", "require_auth", "require_admin"]

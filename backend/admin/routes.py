@@ -16,6 +16,7 @@ You should have received a copy of the GNU Affero General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 
+import json
 import logging
 import re
 from pathlib import Path
@@ -24,21 +25,33 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
+from pydantic import BaseModel
 
 from backend.components.bert_recognizer import BERT_MODEL_REGISTRY, gpu_available
 from backend.components.cstm_analyzer import CustomAnalyzer
 from backend.assets import asset_url
+from backend.config import TRACE_ENABLED, TRACE_RETENTION_DAYS
 from backend.database import SessionLocal
 from backend.database.crud import (
-    create_allowed_value, create_context_word, create_entity, create_pattern,
-    delete_allowed_value, delete_context_word, delete_entity, delete_pattern,
-    get_admin_user, get_allowed_values, get_allowed_value_by_value, get_context_word,
-    get_context_words_by_entity, get_entities, get_entity, get_entity_by_name, get_pattern,
-    get_pattern_by_name, get_patterns_by_entity, get_detector_models, set_detector_model_active,
-    update_admin_password, update_entity, update_pattern, verify_password,
+    count_active_admins, count_audit_logs, count_request_traces,
+    create_allowed_value, create_admin_user, create_api_key, create_context_word, create_entity,
+    create_pattern,
+    delete_admin_user, delete_allowed_value, delete_api_key, delete_context_word, delete_entity,
+    delete_pattern,
+    get_admin_user, get_admin_user_by_username, get_admin_users, get_allowed_values,
+    get_allowed_value_by_value, get_api_keys,
+    get_api_key, get_audit_logs, get_context_word, get_context_words_by_entity, get_entities,
+    get_entity, get_entity_by_name, get_pattern, get_pattern_by_name, get_patterns_by_entity,
+    get_detector_models, get_request_traces, log_audit, set_admin_user_active, set_api_key_active,
+    set_detector_model_active, update_admin_password, update_admin_role, update_entity,
+    update_pattern, verify_password,
 )
+from backend.security import generate_api_key
 
-from .auth import authenticate_user, create_session, delete_session, require_auth, SESSION_COOKIE_NAME
+from .auth import (
+    authenticate_user, create_session, delete_session, require_admin, require_auth,
+    SESSION_COOKIE_NAME,
+)
 from .dependencies import get_template_context
 
 # Router
@@ -51,6 +64,21 @@ logger = logging.getLogger("uvicorn.error")
 TEMPLATES_DIR = Path(__file__).resolve().parents[2] / "frontend" / "templates"
 templates = Jinja2Templates(directory=TEMPLATES_DIR)
 templates.env.globals["asset_url"] = asset_url
+
+# Valid user roles.
+VALID_ROLES = ("admin", "viewer")
+
+
+def _client_ip(request: Request) -> str | None:
+    """Best-effort client IP for the audit log."""
+    if request.client:
+        return request.client.host
+    return None
+
+
+class SanitizePageRequest(BaseModel):
+    """Request body for the session-authenticated sanitize proxy."""
+    text: str
 
 
 # Entities detected by built-in Presidio engines (independent of DB patterns
@@ -169,8 +197,35 @@ async def login_submit(
     """Handle login form submission."""
     user_id = authenticate_user(username, password)
     if not user_id:
+        db = SessionLocal()
+        try:
+            log_audit(
+                db,
+                action="login_failed",
+                summary=f"Fehlgeschlagener Login für '{username}'",
+                actor_username=username,
+                target_type="admin_user",
+                ip_address=_client_ip(request),
+            )
+        finally:
+            db.close()
         context = get_template_context(request, error="Ungültiger Benutzername oder ungültiges Passwort")
         return templates.TemplateResponse("login.html", context, status_code=401)
+
+    db = SessionLocal()
+    try:
+        log_audit(
+            db,
+            action="login",
+            summary=f"Login von '{username}'",
+            actor_id=user_id,
+            actor_username=username,
+            target_type="admin_user",
+            target_id=user_id,
+            ip_address=_client_ip(request),
+        )
+    finally:
+        db.close()
 
     session_id = create_session(user_id)
     response = RedirectResponse(url="/admin/dashboard", status_code=303)
@@ -303,6 +358,12 @@ async def change_password_submit(
 
         # Update password
         update_admin_password(db, user["id"], new_password)
+        log_audit(
+            db, action="password_change", summary="Eigenes Passwort geändert",
+            actor_id=user["id"], actor_username=user["username"],
+            target_type="admin_user", target_id=user["id"], target_label=user["username"],
+            ip_address=_client_ip(request),
+        )
 
         context = get_template_context(request, success="Passwort erfolgreich geändert")
         return templates.TemplateResponse("profile/password.html", context)
@@ -331,7 +392,7 @@ async def create_allowed_value_submit(
     request: Request,
     value: Annotated[str, Form()],
     description: Annotated[str, Form()] = "",
-    user: dict = Depends(require_auth)
+    user: dict = Depends(require_admin)
 ):
     """Add a new allow-listed value."""
     db = SessionLocal()
@@ -347,6 +408,11 @@ async def create_allowed_value_submit(
             return templates.TemplateResponse("allowlist/list.html", context, status_code=400)
 
         create_allowed_value(db, value=value, description=description if description else None)
+        log_audit(
+            db, action="create", summary=f"Ausnahmeliste: '{value}' hinzugefügt",
+            actor_id=user["id"], actor_username=user["username"],
+            target_type="allowed_value", target_label=value, ip_address=_client_ip(request),
+        )
         return RedirectResponse(url="/admin/allowlist", status_code=303)
     finally:
         db.close()
@@ -356,15 +422,169 @@ async def create_allowed_value_submit(
 async def delete_allowed_value_submit(
     request: Request,
     allowed_value_id: int,
-    user: dict = Depends(require_auth)
+    user: dict = Depends(require_admin)
 ):
     """Delete an allow-listed value."""
     db = SessionLocal()
     try:
+        entry = get_allowed_values(db)
+        label = next((a.value for a in entry if a.id == allowed_value_id), str(allowed_value_id))
         delete_allowed_value(db, allowed_value_id)
+        log_audit(
+            db, action="delete", summary=f"Ausnahmeliste: '{label}' gelöscht",
+            actor_id=user["id"], actor_username=user["username"],
+            target_type="allowed_value", target_id=allowed_value_id, target_label=label,
+            ip_address=_client_ip(request),
+        )
         return RedirectResponse(url="/admin/allowlist", status_code=303)
     finally:
         db.close()
+
+
+# ============================================================================
+# API Keys
+# ============================================================================
+
+@admin_router.get("/api-keys", response_class=HTMLResponse)
+async def list_api_keys(request: Request, user: dict = Depends(require_auth)):
+    """Render the API-keys page."""
+    db = SessionLocal()
+    try:
+        api_keys = get_api_keys(db)
+        context = get_template_context(
+            request,
+            api_keys=api_keys,
+            new_api_key=request.query_params.get("new_key"),
+        )
+        return templates.TemplateResponse("apikeys/list.html", context)
+    finally:
+        db.close()
+
+
+@admin_router.post("/api-keys/create")
+async def create_api_key_submit(
+    request: Request,
+    name: Annotated[str, Form()],
+    user: dict = Depends(require_admin)
+):
+    """Create a new API key and show its plaintext exactly once."""
+    name = name.strip()
+    if not name:
+        db = SessionLocal()
+        try:
+            context = get_template_context(
+                request,
+                api_keys=get_api_keys(db),
+                error="Eine Bezeichnung ist erforderlich",
+            )
+            return templates.TemplateResponse("apikeys/list.html", context, status_code=400)
+        finally:
+            db.close()
+
+    plaintext, prefix, key_hash = generate_api_key(name)
+    db = SessionLocal()
+    try:
+        create_api_key(db, name=name, key_prefix=prefix, key_hash=key_hash)
+        log_audit(
+            db, action="create", summary=f"API-Schlüssel für '{name}' erzeugt",
+            actor_id=user["id"], actor_username=user["username"],
+            target_type="api_key", target_label=prefix, ip_address=_client_ip(request),
+        )
+        return RedirectResponse(url=f"/admin/api-keys?new_key={plaintext}", status_code=303)
+    finally:
+        db.close()
+
+
+@admin_router.post("/api-keys/{api_key_id}/toggle")
+async def toggle_api_key_submit(
+    request: Request,
+    api_key_id: int,
+    user: dict = Depends(require_admin)
+):
+    """Activate or deactivate an API key."""
+    db = SessionLocal()
+    try:
+        api_key = get_api_key(db, api_key_id)
+        if api_key:
+            new_state = not api_key.is_active
+            set_api_key_active(db, api_key_id, new_state)
+            log_audit(
+                db,
+                action="toggle",
+                summary=f"API-Schlüssel '{api_key.name}' {'aktiviert' if new_state else 'deaktiviert'}",
+                actor_id=user["id"], actor_username=user["username"],
+                target_type="api_key", target_id=api_key_id, target_label=api_key.key_prefix,
+                ip_address=_client_ip(request),
+            )
+        return RedirectResponse(url="/admin/api-keys", status_code=303)
+    finally:
+        db.close()
+
+
+@admin_router.post("/api-keys/{api_key_id}/delete")
+async def delete_api_key_submit(
+    request: Request,
+    api_key_id: int,
+    user: dict = Depends(require_admin)
+):
+    """Delete an API key."""
+    db = SessionLocal()
+    try:
+        api_key = get_api_key(db, api_key_id)
+        label = api_key.key_prefix if api_key else str(api_key_id)
+        delete_api_key(db, api_key_id)
+        log_audit(
+            db, action="delete", summary=f"API-Schlüssel '{label}' gelöscht",
+            actor_id=user["id"], actor_username=user["username"],
+            target_type="api_key", target_id=api_key_id, target_label=label,
+            ip_address=_client_ip(request),
+        )
+        return RedirectResponse(url="/admin/api-keys", status_code=303)
+    finally:
+        db.close()
+
+
+# ============================================================================
+# Sanitize (login-protected; server-side proxy to the analyzer)
+# ============================================================================
+
+@admin_router.get("/sanitize", response_class=HTMLResponse)
+async def sanitize_page(request: Request, user: dict = Depends(require_auth)):
+    """Render the text-sanitization page (login required).
+
+    The page talks to /admin/sanitize/api on the same origin, so the admin
+    session is used instead of an API key - nothing key-like is exposed to
+    the browser.
+    """
+    return templates.TemplateResponse("sanitize.html", get_template_context(request))
+
+
+@admin_router.post("/sanitize/api")
+async def sanitize_api(
+    request: Request,
+    payload: SanitizePageRequest,
+    user: dict = Depends(require_auth)
+):
+    """Sanitize text for the admin UI (session-authenticated, same-origin).
+
+    Mirrors the /api/v1/sanitize behaviour but authenticates via the admin
+    session rather than an API key, so the web UI keeps working without
+    exposing a key to the browser. Deliberately not traced: this page fires
+    one request per typing pause (live preview), which would flood the trace
+    log - only real API calls are recorded.
+    """
+    import backend.views.anonymizer as anonymizer_module
+
+    try:
+        analyzer = anonymizer_module._get_or_create_analyzer()
+        sanitized_text, mapping = analyzer.process_text(payload.text)
+        return {"sanitized_text": sanitized_text, "mapping": mapping}
+    except Exception as e:
+        logger.error(f"Error in admin sanitize proxy: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Security abort: Data sanitization failed"
+        )
 
 
 # ============================================================================
@@ -407,7 +627,7 @@ async def create_entity_submit(
     placeholder: Annotated[str, Form()],
     description: Annotated[str, Form()] = "",
     is_active: Annotated[bool, Form()] = True,
-    user: dict = Depends(require_auth)
+    user: dict = Depends(require_admin)
 ):
     """Create a new entity."""
     db = SessionLocal()
@@ -424,12 +644,18 @@ async def create_entity_submit(
             )
             return templates.TemplateResponse("entities/create.html", context, status_code=400)
 
-        create_entity(
+        entity = create_entity(
             db,
             name=name,
             placeholder=placeholder,
             description=description if description else None,
             is_active=is_active
+        )
+        log_audit(
+            db, action="create", summary=f"Entität '{name}' erstellt",
+            actor_id=user["id"], actor_username=user["username"],
+            target_type="entity", target_id=entity.id, target_label=name,
+            ip_address=_client_ip(request),
         )
         return RedirectResponse(url="/admin/entities", status_code=303)
     finally:
@@ -463,7 +689,7 @@ async def edit_entity_submit(
     placeholder: Annotated[str, Form()],
     description: Annotated[str, Form()] = "",
     is_active: Annotated[bool, Form()] = False,
-    user: dict = Depends(require_auth)
+    user: dict = Depends(require_admin)
 ):
     """Update an entity."""
     db = SessionLocal()
@@ -482,6 +708,7 @@ async def edit_entity_submit(
             )
             return templates.TemplateResponse("entities/edit.html", context, status_code=400)
 
+        old_label = entity.name
         update_entity(
             db,
             entity_id,
@@ -489,6 +716,12 @@ async def edit_entity_submit(
             placeholder=placeholder,
             description=description if description else None,
             is_active=is_active
+        )
+        log_audit(
+            db, action="update", summary=f"Entität '{old_label}' bearbeitet",
+            actor_id=user["id"], actor_username=user["username"],
+            target_type="entity", target_id=entity_id, target_label=name,
+            ip_address=_client_ip(request),
         )
         return RedirectResponse(url="/admin/entities", status_code=303)
     finally:
@@ -499,12 +732,20 @@ async def edit_entity_submit(
 async def delete_entity_submit(
     request: Request,
     entity_id: int,
-    user: dict = Depends(require_auth)
+    user: dict = Depends(require_admin)
 ):
     """Delete an entity."""
     db = SessionLocal()
     try:
+        entity = get_entity(db, entity_id)
+        label = entity.name if entity else str(entity_id)
         delete_entity(db, entity_id)
+        log_audit(
+            db, action="delete", summary=f"Entität '{label}' gelöscht",
+            actor_id=user["id"], actor_username=user["username"],
+            target_type="entity", target_id=entity_id, target_label=label,
+            ip_address=_client_ip(request),
+        )
         return RedirectResponse(url="/admin/entities", status_code=303)
     finally:
         db.close()
@@ -547,7 +788,7 @@ async def create_pattern_submit(
     regex: Annotated[str, Form()] = "",
     score: Annotated[float, Form()] = 0.5,
     keywords: Annotated[str, Form()] = "",
-    user: dict = Depends(require_auth)
+    user: dict = Depends(require_admin)
 ):
     """Create a pattern for an entity (raw regex or keyword list).
 
@@ -577,6 +818,11 @@ async def create_pattern_submit(
             return templates.TemplateResponse("entities/view.html", context, status_code=400)
 
         create_pattern(db, name=name, regex=regex, score=score, entity_id=entity_id, keywords=stored_keywords)
+        log_audit(
+            db, action="create", summary=f"Muster '{name}' für Entität '{entity.name}' erstellt",
+            actor_id=user["id"], actor_username=user["username"],
+            target_type="pattern", target_label=name, ip_address=_client_ip(request),
+        )
         return RedirectResponse(url=f"/admin/entities/{entity_id}", status_code=303)
     finally:
         db.close()
@@ -590,7 +836,7 @@ async def edit_pattern_submit(
     regex: Annotated[str, Form()] = "",
     score: Annotated[float, Form()] = 0.5,
     keywords: Annotated[str, Form()] = "",
-    user: dict = Depends(require_auth)
+    user: dict = Depends(require_admin)
 ):
     """Update a pattern (raw regex or keyword list)."""
     db = SessionLocal()
@@ -610,6 +856,12 @@ async def edit_pattern_submit(
             return templates.TemplateResponse("patterns/edit.html", context, status_code=400)
 
         update_pattern(db, pattern_id, name=name, regex=regex, score=score, keywords=stored_keywords)
+        log_audit(
+            db, action="update", summary=f"Muster '{name}' bearbeitet",
+            actor_id=user["id"], actor_username=user["username"],
+            target_type="pattern", target_id=pattern_id, target_label=name,
+            ip_address=_client_ip(request),
+        )
         return RedirectResponse(url=f"/admin/entities/{pattern.entity_id}", status_code=303)
     finally:
         db.close()
@@ -637,7 +889,7 @@ async def edit_pattern_page(
 async def delete_pattern_submit(
     request: Request,
     pattern_id: int,
-    user: dict = Depends(require_auth)
+    user: dict = Depends(require_admin)
 ):
     """Delete a pattern."""
     db = SessionLocal()
@@ -646,7 +898,14 @@ async def delete_pattern_submit(
         if not pattern:
             raise HTTPException(status_code=404, detail="Muster nicht gefunden")
         entity_id = pattern.entity_id
+        label = pattern.name
         delete_pattern(db, pattern_id)
+        log_audit(
+            db, action="delete", summary=f"Muster '{label}' gelöscht",
+            actor_id=user["id"], actor_username=user["username"],
+            target_type="pattern", target_id=pattern_id, target_label=label,
+            ip_address=_client_ip(request),
+        )
         return RedirectResponse(url=f"/admin/entities/{entity_id}", status_code=303)
     finally:
         db.close()
@@ -657,13 +916,21 @@ async def create_context_word_submit(
     request: Request,
     entity_id: int,
     word: Annotated[str, Form()],
-    user: dict = Depends(require_auth)
+    user: dict = Depends(require_admin)
 ):
     """Create one or more (comma-separated) context words for an entity."""
     db = SessionLocal()
     try:
-        for term in [w.strip() for w in re.split(r"[,\n;]+", word) if w.strip()]:
+        terms = [w.strip() for w in re.split(r"[,\n;]+", word) if w.strip()]
+        for term in terms:
             create_context_word(db, word=term, entity_id=entity_id)
+        if terms:
+            log_audit(
+                db, action="create", summary=f"Kontextwörter hinzugefügt: {', '.join(terms)}",
+                actor_id=user["id"], actor_username=user["username"],
+                target_type="context_word", target_id=entity_id,
+                ip_address=_client_ip(request),
+            )
         return RedirectResponse(url=f"/admin/entities/{entity_id}", status_code=303)
     finally:
         db.close()
@@ -673,7 +940,7 @@ async def create_context_word_submit(
 async def delete_context_word_submit(
     request: Request,
     context_word_id: int,
-    user: dict = Depends(require_auth)
+    user: dict = Depends(require_admin)
 ):
     """Delete a context word."""
     db = SessionLocal()
@@ -682,7 +949,14 @@ async def delete_context_word_submit(
         if not context_word:
             raise HTTPException(status_code=404, detail="Kontextwort nicht gefunden")
         entity_id = context_word.entity_id
+        label = context_word.word
         delete_context_word(db, context_word_id)
+        log_audit(
+            db, action="delete", summary=f"Kontextwort '{label}' gelöscht",
+            actor_id=user["id"], actor_username=user["username"],
+            target_type="context_word", target_id=context_word_id, target_label=label,
+            ip_address=_client_ip(request),
+        )
         return RedirectResponse(url=f"/admin/entities/{entity_id}", status_code=303)
     finally:
         db.close()
@@ -762,7 +1036,7 @@ async def list_models(request: Request, user: dict = Depends(require_auth)):
 async def toggle_model(
     request: Request,
     model_key: str,
-    user: dict = Depends(require_auth)
+    user: dict = Depends(require_admin)
 ):
     """Toggle a transformer model on or off and rebuild the analyzer.
 
@@ -789,6 +1063,275 @@ async def toggle_model(
         except Exception as e:
             logger.error(f"Error rebuilding analyzer after model toggle: {e}")
 
+        log_audit(
+            db, action="toggle",
+            summary=f"Modell '{model_key}' {'aktiviert' if new_state else 'deaktiviert'}",
+            actor_id=user["id"], actor_username=user["username"],
+            target_type="detector_model", target_label=model_key,
+            ip_address=_client_ip(request),
+        )
         return RedirectResponse(url="/admin/modelle", status_code=303)
+    finally:
+        db.close()
+
+
+# ============================================================================
+# Users (admin-only)
+# ============================================================================
+
+@admin_router.get("/users", response_class=HTMLResponse)
+async def list_users_page(request: Request, user: dict = Depends(require_admin)):
+    """Render the user management page."""
+    db = SessionLocal()
+    try:
+        users = get_admin_users(db)
+        context = get_template_context(
+            request,
+            users=users,
+            current_user_id=user["id"],
+            valid_roles=VALID_ROLES,
+        )
+        return templates.TemplateResponse("users/list.html", context)
+    finally:
+        db.close()
+
+
+@admin_router.post("/users/create")
+async def create_user_submit(
+    request: Request,
+    username: Annotated[str, Form()],
+    password: Annotated[str, Form()],
+    role: Annotated[str, Form()] = "viewer",
+    user: dict = Depends(require_admin)
+):
+    """Create a new admin/viewer user."""
+    username = username.strip()
+    role = role if role in VALID_ROLES else "viewer"
+    db = SessionLocal()
+    try:
+        def _error(message: str):
+            return templates.TemplateResponse(
+                "users/list.html",
+                get_template_context(
+                    request, users=get_admin_users(db), current_user_id=user["id"],
+                    valid_roles=VALID_ROLES, error=message,
+                ),
+                status_code=400,
+            )
+
+        if not username:
+            return _error("Ein Benutzername ist erforderlich")
+        if len(password) < 8:
+            return _error("Das Passwort muss mindestens 8 Zeichen lang sein")
+        if get_admin_user_by_username(db, username):
+            return _error(f"Der Benutzer '{username}' existiert bereits")
+
+        new_user = create_admin_user(db, username=username, password=password, role=role)
+        log_audit(
+            db, action="create", summary=f"Benutzer '{username}' ({role}) angelegt",
+            actor_id=user["id"], actor_username=user["username"],
+            target_type="admin_user", target_id=new_user.id, target_label=username,
+            ip_address=_client_ip(request),
+        )
+        return RedirectResponse(url="/admin/users", status_code=303)
+    finally:
+        db.close()
+
+
+@admin_router.post("/users/{user_id}/toggle")
+async def toggle_user_submit(
+    request: Request,
+    user_id: int,
+    user: dict = Depends(require_admin)
+):
+    """Activate or deactivate a user (with self/last-admin protection)."""
+    db = SessionLocal()
+    try:
+        target = get_admin_user(db, user_id)
+        if not target:
+            raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
+        if user_id == user["id"]:
+            raise HTTPException(status_code=400, detail="Der eigene Zugang kann nicht deaktiviert werden")
+
+        new_state = not target.is_active
+        if not new_state and target.role == "admin" and count_active_admins(db) <= 1:
+            raise HTTPException(status_code=400, detail="Der letzte aktive Administrator kann nicht deaktiviert werden")
+
+        set_admin_user_active(db, user_id, new_state)
+        log_audit(
+            db, action="toggle",
+            summary=f"Benutzer '{target.username}' {'aktiviert' if new_state else 'deaktiviert'}",
+            actor_id=user["id"], actor_username=user["username"],
+            target_type="admin_user", target_id=user_id, target_label=target.username,
+            ip_address=_client_ip(request),
+        )
+        return RedirectResponse(url="/admin/users", status_code=303)
+    finally:
+        db.close()
+
+
+@admin_router.post("/users/{user_id}/role")
+async def change_user_role_submit(
+    request: Request,
+    user_id: int,
+    role: Annotated[str, Form()],
+    user: dict = Depends(require_admin)
+):
+    """Change a user's role (with self/last-admin protection)."""
+    if role not in VALID_ROLES:
+        raise HTTPException(status_code=400, detail="Unbekannte Rolle")
+
+    db = SessionLocal()
+    try:
+        target = get_admin_user(db, user_id)
+        if not target:
+            raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
+        if user_id == user["id"]:
+            raise HTTPException(status_code=400, detail="Die eigene Rolle kann nicht geändert werden")
+        if role != "admin" and target.role == "admin" and count_active_admins(db) <= 1:
+            raise HTTPException(status_code=400, detail="Der letzte aktive Administrator kann nicht herabgestuft werden")
+
+        update_admin_role(db, user_id, role)
+        log_audit(
+            db, action="update", summary=f"Rolle von '{target.username}' auf '{role}' geändert",
+            actor_id=user["id"], actor_username=user["username"],
+            target_type="admin_user", target_id=user_id, target_label=target.username,
+            ip_address=_client_ip(request),
+        )
+        return RedirectResponse(url="/admin/users", status_code=303)
+    finally:
+        db.close()
+
+
+@admin_router.post("/users/{user_id}/reset-password")
+async def reset_user_password_submit(
+    request: Request,
+    user_id: int,
+    new_password: Annotated[str, Form()],
+    user: dict = Depends(require_admin)
+):
+    """Reset another user's password."""
+    db = SessionLocal()
+    try:
+        target = get_admin_user(db, user_id)
+        if not target:
+            raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
+        if len(new_password) < 8:
+            raise HTTPException(status_code=400, detail="Das Passwort muss mindestens 8 Zeichen lang sein")
+
+        update_admin_password(db, user_id, new_password)
+        log_audit(
+            db, action="password_change", summary=f"Passwort von '{target.username}' zurückgesetzt",
+            actor_id=user["id"], actor_username=user["username"],
+            target_type="admin_user", target_id=user_id, target_label=target.username,
+            ip_address=_client_ip(request),
+        )
+        return RedirectResponse(url="/admin/users", status_code=303)
+    finally:
+        db.close()
+
+
+@admin_router.post("/users/{user_id}/delete")
+async def delete_user_submit(
+    request: Request,
+    user_id: int,
+    user: dict = Depends(require_admin)
+):
+    """Delete a user (with self/last-admin protection)."""
+    db = SessionLocal()
+    try:
+        target = get_admin_user(db, user_id)
+        if not target:
+            raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
+        if user_id == user["id"]:
+            raise HTTPException(status_code=400, detail="Der eigene Zugang kann nicht gelöscht werden")
+        if target.role == "admin" and count_active_admins(db) <= 1:
+            raise HTTPException(status_code=400, detail="Der letzte aktive Administrator kann nicht gelöscht werden")
+
+        label = target.username
+        delete_admin_user(db, user_id)
+        log_audit(
+            db, action="delete", summary=f"Benutzer '{label}' gelöscht",
+            actor_id=user["id"], actor_username=user["username"],
+            target_type="admin_user", target_id=user_id, target_label=label,
+            ip_address=_client_ip(request),
+        )
+        return RedirectResponse(url="/admin/users", status_code=303)
+    finally:
+        db.close()
+
+
+# ============================================================================
+# Audit log (admin-only)
+# ============================================================================
+
+PAGE_SIZE = 100
+
+
+@admin_router.get("/audit", response_class=HTMLResponse)
+async def audit_page(request: Request, user: dict = Depends(require_admin)):
+    """Render the read-only audit log with simple filters."""
+    db = SessionLocal()
+    try:
+        actor = request.query_params.get("actor") or None
+        action = request.query_params.get("action") or None
+        target_type = request.query_params.get("target_type") or None
+        page = max(1, int(request.query_params.get("page", 1)))
+        total = count_audit_logs(db, actor_username=actor, action=action, target_type=target_type)
+        entries = get_audit_logs(
+            db, limit=PAGE_SIZE, offset=(page - 1) * PAGE_SIZE,
+            actor_username=actor, action=action, target_type=target_type,
+        )
+        context = get_template_context(
+            request,
+            entries=entries,
+            total=total,
+            page=page,
+            page_size=PAGE_SIZE,
+            total_pages=max(1, (total + PAGE_SIZE - 1) // PAGE_SIZE),
+            filter_actor=actor or "",
+            filter_action=action or "",
+            filter_target_type=target_type or "",
+        )
+        return templates.TemplateResponse("audit/list.html", context)
+    finally:
+        db.close()
+
+
+# ============================================================================
+# Request traces (admin-only, content-free)
+# ============================================================================
+
+@admin_router.get("/traces", response_class=HTMLResponse)
+async def traces_page(request: Request, user: dict = Depends(require_admin)):
+    """Render the read-only request traces (metadata only)."""
+    db = SessionLocal()
+    try:
+        source = request.query_params.get("source") or None
+        page = max(1, int(request.query_params.get("page", 1)))
+        total = count_request_traces(db, source=source)
+        rows = get_request_traces(db, limit=PAGE_SIZE, offset=(page - 1) * PAGE_SIZE, source=source)
+
+        # Parse the JSON entity counts for display.
+        traces = []
+        for row in rows:
+            try:
+                counts = json.loads(row.entity_counts) if row.entity_counts else {}
+            except (ValueError, TypeError):
+                counts = {}
+            traces.append({"row": row, "counts": counts})
+
+        context = get_template_context(
+            request,
+            traces=traces,
+            total=total,
+            page=page,
+            page_size=PAGE_SIZE,
+            total_pages=max(1, (total + PAGE_SIZE - 1) // PAGE_SIZE),
+            filter_source=source or "",
+            trace_enabled=TRACE_ENABLED,
+            retention_days=TRACE_RETENTION_DAYS,
+        )
+        return templates.TemplateResponse("traces/list.html", context)
     finally:
         db.close()

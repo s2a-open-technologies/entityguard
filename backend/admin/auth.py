@@ -111,7 +111,7 @@ def get_current_user(request: Request) -> Optional[dict]:
         user = get_admin_user(db, user_id)
         if not user or not user.is_active:
             return None
-        return {"id": user.id, "username": user.username}
+        return {"id": user.id, "username": user.username, "role": user.role}
 
 
 def require_auth(request: Request) -> dict:
@@ -135,6 +135,31 @@ def require_auth(request: Request) -> dict:
         raise HTTPException(
             status_code=status.HTTP_307_TEMPORARY_REDIRECT,
             headers={"Location": "/admin/login"}
+        )
+    return user
+
+
+def require_admin(user: dict = Depends(require_auth)) -> dict:
+    """
+    Require the 'admin' role for a route.
+
+    Viewers pass require_auth but are rejected here with HTTP 403, so all
+    mutating configuration routes can be locked down with a single
+    dependency.
+
+    Args:
+        user: The authenticated user (from require_auth).
+
+    Returns:
+        dict: The user info if it has the admin role.
+
+    Raises:
+        HTTPException: 403 if the user is not an admin.
+    """
+    if user.get("role") != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Zugriff verweigert: Administratorrechte erforderlich",
         )
     return user
 

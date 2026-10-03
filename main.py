@@ -18,6 +18,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 import logging
 from contextlib import asynccontextmanager
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import uvicorn
@@ -26,10 +27,29 @@ from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from backend.admin import admin_router, get_current_user
-from backend.views import entityguard_router, public_router
+from backend.config import TRACE_ENABLED, TRACE_RETENTION_DAYS
+from backend.database import SessionLocal
+from backend.database.crud import delete_old_request_traces
+from backend.views import entityguard_router
 
 # Logger
 logger = logging.getLogger("uvicorn.error")
+
+
+def _cleanup_request_traces() -> None:
+    """Prune request traces older than TRACE_RETENTION_DAYS (best-effort)."""
+    if not TRACE_ENABLED:
+        return
+    db = SessionLocal()
+    try:
+        cutoff = datetime.utcnow() - timedelta(days=TRACE_RETENTION_DAYS)
+        removed = delete_old_request_traces(db, cutoff)
+        if removed:
+            logger.info(f"Pruned {removed} request trace(s) older than {TRACE_RETENTION_DAYS} days")
+    except Exception as e:
+        logger.warning(f"Request-trace cleanup failed: {e}")
+    finally:
+        db.close()
 
 
 @asynccontextmanager
@@ -42,6 +62,7 @@ async def lifespan(app: FastAPI):
     """
     # Startup
     logger.info("EntityGuard starting up...")
+    _cleanup_request_traces()
 
     yield
 
@@ -72,7 +93,6 @@ def create_app():
     # Include routers
     app.include_router(entityguard_router)
     app.include_router(admin_router)
-    app.include_router(public_router)
 
     @app.get("/health")
     async def health():

@@ -45,6 +45,7 @@
             <span class="model-entities">Erkannte Entitäten: {{ model.entities }}</span>
         </div>
         <form method="POST" action="/admin/modelle/{{ model.key }}/toggle" class="model-toggle-form" data-toggling-label="{% if model.is_active %}Wird ausgeschaltet…{% else %}Wird eingeschaltet…{% endif %}">
+            {% if user.role == 'admin' %}
             {% if model.is_active %}
             <button type="submit" class="btn btn-secondary">
                 <span class="spinner" hidden></span>
@@ -55,6 +56,7 @@
                 <span class="spinner" hidden></span>
                 <span class="btn-label">Einschalten</span>
             </button>
+            {% endif %}
             {% endif %}
         </form>
     </div>
