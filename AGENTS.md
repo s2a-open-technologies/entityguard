@@ -39,8 +39,8 @@ Service listens on `http://localhost:9500` (`main.py` hardcodes port `9500`).
 
 ## Database & Migrations
 
-- Alembic URL: `sqlite:///data/entityguard.db` (configured in `alembic.ini`).
-- `data/` is gitignored but mounted as a volume in Docker Compose, so the DB persists across `docker-compose down`. Local DB state is dev-only — migrations are the only canonical source; never document "just update the DB".
+- Alembic URL: `sqlite:///data/entityguard.db` (configured in `alembic.ini`; the app resolves the same path via `backend/database/database.py`). Local `data/` is gitignored, dev-only — migrations are the only canonical source; never document "just update the DB".
+- Docker Compose uses a **named volume** `entityguard-data` (not a host bind mount since the volume change), so the container DB persists across `docker-compose down` but is separate from the local `data/` dir. There is no docker-compose host-mount of the local DB.
 - `main.py` does not initialize or seed the database on startup. **You must run `uv run alembic upgrade head` before starting the app.**
 - Alembic migrations are the exclusive source of schema, default entities/patterns, and the default admin user.
 - The default admin user is created by migration `004_seed_default_admin_user.py` (idempotent: only if `admin_users` is empty).
