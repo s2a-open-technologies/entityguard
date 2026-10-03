@@ -14,6 +14,13 @@ section as the GitHub Release notes.
 
 ### Added
 
+- **Compliance- und Policy-Dokumentation**: `SECURITY.md` (Sicherheits-
+  architektur, Art.-32-Maßnahmen, Deployment-Hinweise), `DISCLAIMER.md`
+  (kein Medizinprodukt, Erkennung nicht fehlerfrei), `CONTRIBUTING.md` und
+  `CODE_OF_CONDUCT.md`; `docs/data-mapping.md` (Datenfluss/ROPA-Ausgangspunkt),
+  `docs/pii.md` (Maskierungs-Pipeline) und
+  `docs/audit-checklist-entityguard.md` (Audit-Selbstauskunft). README um
+  Abschnitt „Rechtliches & Compliance" ergänzt.
 - **Audit-Log-Ausbau**: Filter nach Zeitraum (`date_from`/`date_to`) und
   **CSV-/JSON-Export** (`GET /admin/audit/export`), admin-only.
 - **Reload im Admin-UI**: `POST /admin/reload` (session-authentifiziert,

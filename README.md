@@ -24,6 +24,7 @@ Ausgabe:  "[NAME_1], geb. [DATUM/ZEIT_1], behandelt in der [ORGANISATION_1]."
 - [Konfiguration](#konfiguration)
 - [Transformer-Modelle (optionaler Qualitäts-Boost)](#transformer-modelle-optionaler-qualitäts-boost)
 - [Architektur](#architektur)
+- [Rechtliches & Compliance](#rechtliches--compliance)
 - [Entwicklung](#entwicklung)
 - [Fehlerbehebung](#fehlerbehebung)
 
@@ -449,6 +450,27 @@ Bereinigter Text → LLM
 
 ---
 
+## Rechtliches & Compliance
+
+EntityGuard ist eine **zustandslose Anonymisierungsschicht**: Es speichert
+weder den analysierten Text noch das `mapping`. Für Betreiber und Audits:
+
+- [`docs/data-mapping.md`](docs/data-mapping.md) — Datenfluss, Datenkategorien,
+  Aufbewahrung (Ausgangspunkt für Art. 30 DSGVO).
+- [`docs/pii.md`](docs/pii.md) — Maskierungs-Pipeline und Response-Contract.
+- [`docs/audit-checklist-entityguard.md`](docs/audit-checklist-entityguard.md) —
+  Selbstauskunft entlang typischer Audit-Prüfpunkte.
+- [`SECURITY.md`](SECURITY.md) — Sicherheitsarchitektur, Art.-32-Maßnahmen,
+  Deployment-Hinweise.
+- [`DISCLAIMER.md`](DISCLAIMER.md) — Haftung und Einsatzhinweise
+  (kein Medizinprodukt; automatische Erkennung ist nicht fehlerfrei).
+
+Das Admin-UI bietet dafür ein **Audit-Log** (`/admin/audit`, Filter nach
+Akteur/Aktion/Typ/Zeitraum + CSV-/JSON-Export) und ein inhaltsfreies
+**Tracing** (`/admin/traces`).
+
+---
+
 ## Entwicklung
 
 ```bash
@@ -491,7 +513,7 @@ uv run alembic upgrade head
 **Neue Patterns werden nicht erkannt**  
 Nach Änderungen im Admin-Interface den Analyzer-Cache neu laden:
 ```bash
-curl -X POST http://localhost:9500/api/v1/reload
+curl -X POST http://localhost:9500/api/v1/reload -H "Authorization: Bearer eg_…"
 ```
 
 **Container startet, aber kein Health-Check**  

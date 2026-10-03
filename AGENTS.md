@@ -137,3 +137,8 @@ curl -X POST http://localhost:9500/api/v1/reload -H "Authorization: Bearer eg_..
 
 - `README.md` — full user-facing docs, API examples, OpenWebUI integration.
 - `docs/OpenWebUI.md` — OpenWebUI filter setup.
+- `docs/data-mapping.md` — data flow / ROPA starting point (what is and isn't stored).
+- `docs/pii.md` — masking pipeline and response contract.
+- `docs/audit-checklist-entityguard.md` — audit self-assessment.
+- `SECURITY.md` — security architecture, Art. 32 measures, deployment notes.
+- `DISCLAIMER.md` — liability / not-a-medical-device notice.
