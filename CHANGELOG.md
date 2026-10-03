@@ -12,6 +12,88 @@ section as the GitHub Release notes.
 
 ## [Unreleased]
 
+## [1.1.0] — 2026-10-03
+
+### Fixed
+
+- **Medizinische Feldbezeichnungen fälschlich als Name/Ort maskiert**
+  (Migration `016`): Die deutsche spaCy-NER tagt isolierte Feldwörter wie
+  `Fallnr` (PER), `Fallnummer`/`Fallid`/`Az` (LOC) oder `Patientennummer`
+  (PER). Sie erschienen dadurch als `[NAME]`/`[ADRESSE/ORT]` und konnten im
+  Fließtext sogar einen folgenden Namen verschlucken. Die Wörter sind jetzt
+  vorbelegt in der **Ausnahmeliste**; die eigentliche Nummer wird weiterhin
+  von `MEDICAL_CONTEXT` (`fallnummer_generic`) maskiert.
+- **Doku an die tatsächliche API-Ausgabe angepasst**: Die Kurzbeispiele in
+  `README.md` zeigten eine veraltete, nicht indexierte Maskierung
+  (`Patient [NAME]`, `der Charité` als Ort). Sie zeigen jetzt die echte
+  Ausgabe inkl. `anrede_name`-Zusammenfassung und `[ORGANISATION_1]`.
+  `docs/OpenWebUI.md` nannte den Filter fälschlich `Health Guardrail Filter`
+  (korrekt: `EntityGuard Filter`) und erwähnt jetzt, dass das Antwort-`mapping`
+  bewusst nicht an das LLM weitergegeben wird.
+
+### Added
+
+- **Benutzerverwaltung mit Rollen** (Migration `018`): `admin_users.role`
+  (`admin` | `viewer`). Neue Seite **Benutzer** (`/admin/users`) zum Anlegen,
+  Aktivieren/Deaktivieren, Rollenwechsel, Passwort-Reset und Löschen
+  (nur Admins). `require_admin` (`backend/admin/auth.py`) schützt alle
+  mutierenden Routen; Viewer erhalten 403. Selbst-Deaktivierung/-Löschung/
+  Rollenentzug und das Entfernen des letzten aktiven Admins sind gesperrt.
+- **Audit-Log** (`audit_log`, Migration `018`): append-only Protokoll *wer/wann/
+  was* für alle Konfigurationsänderungen (Entitäten, Muster, Kontextwörter,
+  Ausnahmeliste, API-Schlüssel, Modelle, Benutzer) sowie Logins **und
+  fehlgeschlagene Logins**. Es speichert **keine** geänderten Werte. Seite
+  `/admin/audit` (nur Admins, Filter + Pagination).
+- **Anfragen-Tracing (inhaltsfrei)** (`request_trace`, Migration `019`,
+  `backend/tracing.py`): pro Anonymisierungs-Anfrage nur Metadaten – Quelle,
+  App/Key-Präfix, Eingabelänge, Anzahl und Typ der Maskierungen, Latenz,
+  Status und optional ein keyed Input-Hash (HMAC). **Kein** Text, **kein**
+  Mapping. Nur `/api/v1/sanitize` wird protokolliert — die Admin-Testseite
+  (`/admin/sanitize/api`) bewusst **nicht**, da sie bei jedem Tippen auslöst.
+  Steuerung über `backend/config.py` / Env: `TRACE_ENABLED` (Default `true`),
+  `TRACE_RETENTION_DAYS` (Default `7`, Löschung beim Start), `TRACE_HMAC_SECRET`
+  (Hash nur bei gesetztem Secret). Seite `/admin/traces` (nur Admins).
+- **API-Schlüssel für die JSON-API** (Migration `017`): `/api/v1/sanitize` und
+  `/api/v1/reload` verlangen jetzt einen Schlüssel
+  (`Authorization: Bearer <key>` oder `X-API-Key`). Schlüssel werden im
+  Admin-UI unter **API-Schlüssel** erzeugt (`backend/security.py`,
+  `backend/admin/routes.py`) – Bezeichnung pro App, mehrere Schlüssel möglich,
+  an-/ausschaltbar und löschbar. Gespeichert wird nur der bcrypt-Hash; der
+  Klartext wird **einmalig** beim Erzeugen angezeigt. Solange kein aktiver
+  Schlüssel existiert, antwortet die API mit **401** (fail-closed).
+- **Sanitize-Seite hinter dem Login**: Die bisher öffentliche `/sanitize`-Seite
+  ist jetzt `GET /admin/sanitize` und nur für eingeloggte Admins erreichbar.
+  Sie spricht den neuen same-origin Proxy `POST /admin/sanitize/api` an
+  (Session-Auth), sodass im Browser kein Schlüssel liegt. Der öffentliche
+  `public_router` / `backend/views/public.py` entfällt; Sidebar- und
+  Dashboard-Links zeigen auf `/admin/sanitize`.
+- **README**: Ausnahmeliste, API-Schlüssel-Verwaltung und die
+  login-geschützte Testseite dokumentiert; Hinweis ergänzt, dass
+  `recognizers_count` ein grober Indikator und kein exakter Entitätszähler ist.
+- **OpenWebUI-Doku: Antwort-De-Anonymisierung** — neuer Abschnitt
+  „Antwort-De-Anonymisierung mit dem `mapping`" in `docs/OpenWebUI.md`:
+  erweiterter Filter-Code, der das `mapping` in `inlet()` im
+  `__metadata__`-Dict ablegt und in `outlet()` die Platzhalter der LLM-Antwort
+  clientseitig durch die Originalwerte ersetzt (inkl. Einschränkungen: kein
+  `/api/chat/completed`, nur aktuelle Anfrage). Beide Filter-Varianten senden
+  jetzt den API-Schlüssel via `api_key`-Valve mit.
+- **Ausnahmeliste mit sinnvollen Vorbelegungen**: Migration `016` seedet die
+  bekannten, von spaCy fehlklassifizierten Feldbezeichnungen (siehe oben),
+  sodass der Dienst ab Werk keine Label-Wörter mehr maskiert. Die Einträge
+  sind im Admin-UI unter **Ausnahmeliste** sichtbar und editierbar.
+
+### Security
+
+- **`/api/v1/sanitize` und `/api/v1/reload` sind ab Werk gesperrt**: Ohne
+  aktiven API-Schlüssel liefern sie 401. Die zuvor öffentliche, login-freie
+  `/sanitize`-Seite ist entfernt bzw. hinter den Admin-Login verschoben.
+- **Sichtbarkeit nach Rolle**: Viewer sehen in der UI keine mutierenden
+  Schaltflächen, und Benutzer-, Audit- und Trace-Seiten sind ausschließlich für
+  Admins erreichbar. Der Server erzwingt dies unabhängig von der UI (403).
+- **Tracing speichert bewusst keine Inhalte** (kein Rohtext, kein `mapping`) und
+  unterliegt einer automatischen Aufbewahrungsfrist – Rohtext-/Mapping-Logging
+  wäre mit Blick auf Art. 5/9 DSGVO nicht vertretbar.
+
 ## [1.0.0] — 2026-10-02
 
 ### Changed
@@ -122,5 +204,6 @@ section as the GitHub Release notes.
 - Keine sicherheitsrelevanten Änderungen in diesem Release. (Der Fail-Closed-
   Grundsatz von `/api/v1/entityguard/sanitize` ist unverändert.)
 
-[Unreleased]: https://github.com/daemolition/guardrails/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/daemolition/guardrails/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/daemolition/guardrails/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/daemolition/guardrails/compare/v0.6.0...v1.0.0
