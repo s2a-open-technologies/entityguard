@@ -81,7 +81,7 @@ def create_app():
     app = FastAPI(
         title="EntityGuard",
         description="Security layer for processing patient data according to GDPR & HIPAA",
-        version="0.6.0",
+        version="1.1.0",
         lifespan=lifespan
     )
 
