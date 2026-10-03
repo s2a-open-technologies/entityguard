@@ -12,6 +12,20 @@ section as the GitHub Release notes.
 
 ## [Unreleased]
 
+### Added
+
+- **Audit-Log-Ausbau**: Filter nach Zeitraum (`date_from`/`date_to`) und
+  **CSV-/JSON-Export** (`GET /admin/audit/export`), admin-only.
+- **Reload im Admin-UI**: `POST /admin/reload` (session-authentifiziert,
+  `require_admin`) lädt den Analyzer neu, ohne einen API-Key zu benötigen;
+  Button auf dem Dashboard. Ergänzt den API-Key-geschützten
+  `POST /api/v1/reload`.
+
+### Fixed
+
+- **README-Fehlerbehebung**: Der `reload`-Beispielbefehl enthielt den jetzt
+  erforderlichen API-Key nicht.
+
 ## [1.1.0] — 2026-10-03
 
 ### Fixed

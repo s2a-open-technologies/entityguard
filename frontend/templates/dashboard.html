@@ -5,6 +5,12 @@
 {% block content %}
 <div class="page-header">
     <h1>Dashboard</h1>
+    {% if user.role == 'admin' %}
+    <form method="POST" action="/admin/reload" class="inline-form"
+          onsubmit="return confirm('Analyzer jetzt neu aus der Datenbank laden?');">
+        <button type="submit" class="btn btn-secondary">Analyzer neu laden</button>
+    </form>
+    {% endif %}
 </div>
 
 <p class="help-text">

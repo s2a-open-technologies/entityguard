@@ -5,6 +5,10 @@
 {% block content %}
 <div class="page-header">
     <h1>Audit-Log</h1>
+    <div class="header-actions">
+        <a href="/admin/audit/export?{{ base_query }}&format=csv" class="btn btn-secondary">CSV-Export</a>
+        <a href="/admin/audit/export?{{ base_query }}&format=json" class="btn btn-secondary">JSON-Export</a>
+    </div>
 </div>
 
 <p class="help-text">
@@ -21,7 +25,7 @@
         <div class="form-group">
             <select name="action">
                 <option value="">Alle Aktionen</option>
-                {% for a in ['create', 'update', 'delete', 'toggle', 'login', 'login_failed', 'password_change'] %}
+                {% for a in audit_actions %}
                 <option value="{{ a }}" {% if filter_action == a %}selected{% endif %}>{{ a }}</option>
                 {% endfor %}
             </select>
@@ -29,10 +33,18 @@
         <div class="form-group">
             <select name="target_type">
                 <option value="">Alle Typen</option>
-                {% for t in ['entity', 'pattern', 'context_word', 'allowed_value', 'api_key', 'detector_model', 'admin_user'] %}
+                {% for t in audit_target_types %}
                 <option value="{{ t }}" {% if filter_target_type == t %}selected{% endif %}>{{ t }}</option>
                 {% endfor %}
             </select>
+        </div>
+        <div class="form-group">
+            <label for="date_from">Von</label>
+            <input type="date" id="date_from" name="date_from" value="{{ filter_date_from }}">
+        </div>
+        <div class="form-group">
+            <label for="date_to">Bis</label>
+            <input type="date" id="date_to" name="date_to" value="{{ filter_date_to }}">
         </div>
         <button type="submit" class="btn btn-secondary btn-sm">Filtern</button>
         <a href="/admin/audit" class="btn btn-secondary btn-sm">Zurücksetzen</a>
@@ -65,8 +77,8 @@
     </table>
     <p class="help-text">
         {{ total }} Einträge · Seite {{ page }} von {{ total_pages }}
-        {% if page > 1 %} · <a href="/admin/audit?actor={{ filter_actor }}&action={{ filter_action }}&target_type={{ filter_target_type }}&page={{ page - 1 }}">Zurück</a>{% endif %}
-        {% if page < total_pages %} · <a href="/admin/audit?actor={{ filter_actor }}&action={{ filter_action }}&target_type={{ filter_target_type }}&page={{ page + 1 }}">Weiter</a>{% endif %}
+        {% if page > 1 %} · <a href="/admin/audit?{{ base_query }}&page={{ page - 1 }}">Zurück</a>{% endif %}
+        {% if page < total_pages %} · <a href="/admin/audit?{{ base_query }}&page={{ page + 1 }}">Weiter</a>{% endif %}
     </p>
     {% else %}
     <p class="empty-state">Keine Einträge gefunden.</p>

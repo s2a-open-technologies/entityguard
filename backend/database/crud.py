@@ -489,15 +489,15 @@ def log_audit(
     return entry
 
 
-def get_audit_logs(
+def _audit_query(
     db: Session,
-    limit: int = 100,
-    offset: int = 0,
     actor_username: Optional[str] = None,
     action: Optional[str] = None,
     target_type: Optional[str] = None,
-) -> list[AuditLogModel]:
-    """Get audit entries, newest first, with optional filters."""
+    date_from: Optional[datetime] = None,
+    date_to: Optional[datetime] = None,
+):
+    """Build the shared audit-log query with all optional filters applied."""
     query = db.query(AuditLogModel)
     if actor_username:
         query = query.filter(AuditLogModel.actor_username == actor_username)
@@ -505,8 +505,27 @@ def get_audit_logs(
         query = query.filter(AuditLogModel.action == action)
     if target_type:
         query = query.filter(AuditLogModel.target_type == target_type)
+    if date_from:
+        query = query.filter(AuditLogModel.created_at >= date_from)
+    if date_to:
+        query = query.filter(AuditLogModel.created_at <= date_to)
+    return query
+
+
+def get_audit_logs(
+    db: Session,
+    limit: int = 100,
+    offset: int = 0,
+    actor_username: Optional[str] = None,
+    action: Optional[str] = None,
+    target_type: Optional[str] = None,
+    date_from: Optional[datetime] = None,
+    date_to: Optional[datetime] = None,
+) -> list[AuditLogModel]:
+    """Get audit entries, newest first, with optional filters."""
     return (
-        query.order_by(AuditLogModel.created_at.desc(), AuditLogModel.id.desc())
+        _audit_query(db, actor_username, action, target_type, date_from, date_to)
+        .order_by(AuditLogModel.created_at.desc(), AuditLogModel.id.desc())
         .offset(offset)
         .limit(limit)
         .all()
@@ -518,16 +537,40 @@ def count_audit_logs(
     actor_username: Optional[str] = None,
     action: Optional[str] = None,
     target_type: Optional[str] = None,
+    date_from: Optional[datetime] = None,
+    date_to: Optional[datetime] = None,
 ) -> int:
     """Count audit entries matching the same filters as get_audit_logs."""
-    query = db.query(AuditLogModel)
-    if actor_username:
-        query = query.filter(AuditLogModel.actor_username == actor_username)
-    if action:
-        query = query.filter(AuditLogModel.action == action)
-    if target_type:
-        query = query.filter(AuditLogModel.target_type == target_type)
-    return query.count()
+    return _audit_query(db, actor_username, action, target_type, date_from, date_to).count()
+
+
+def iter_audit_logs(
+    db: Session,
+    actor_username: Optional[str] = None,
+    action: Optional[str] = None,
+    target_type: Optional[str] = None,
+    date_from: Optional[datetime] = None,
+    date_to: Optional[datetime] = None,
+    batch_size: int = 1000,
+):
+    """Yield every matching audit entry (newest first) in batches for export.
+
+    Unlike get_audit_logs this has no page limit, so a full export of the
+    append-only log stays memory-bounded.
+    """
+    offset = 0
+    while True:
+        batch = get_audit_logs(
+            db, limit=batch_size, offset=offset,
+            actor_username=actor_username, action=action, target_type=target_type,
+            date_from=date_from, date_to=date_to,
+        )
+        if not batch:
+            return
+        yield from batch
+        if len(batch) < batch_size:
+            return
+        offset += batch_size
 
 
 # ============================================================================

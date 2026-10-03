@@ -16,11 +16,15 @@ You should have received a copy of the GNU Affero General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 
+import csv
+import io
 import json
 import logging
 import re
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Annotated
+from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -42,7 +46,8 @@ from backend.database.crud import (
     get_allowed_value_by_value, get_api_keys,
     get_api_key, get_audit_logs, get_context_word, get_context_words_by_entity, get_entities,
     get_entity, get_entity_by_name, get_pattern, get_pattern_by_name, get_patterns_by_entity,
-    get_detector_models, get_request_traces, log_audit, set_admin_user_active, set_api_key_active,
+    get_detector_models, get_request_traces, iter_audit_logs, log_audit, set_admin_user_active,
+    set_api_key_active,
     set_detector_model_active, update_admin_password, update_admin_role, update_entity,
     update_pattern, verify_password,
 )
@@ -312,6 +317,37 @@ async def preview_pattern(
         }
     except re.error as e:
         return {"success": False, "error": str(e)}
+
+
+# ============================================================================
+# Reload (session-authenticated; same effect as POST /api/v1/reload)
+# ============================================================================
+
+@admin_router.post("/reload")
+async def reload_analyzer(request: Request, user: dict = Depends(require_admin)):
+    """Rebuild the singleton analyzer from the DB (session-authenticated).
+
+    Same effect as the API-key-protected ``POST /api/v1/reload`` but usable
+    straight from the admin UI, so no API key is needed for the web UI.
+    """
+    db = SessionLocal()
+    try:
+        import backend.views.anonymizer as anonymizer_module
+        analyzer = CustomAnalyzer(language="de", db=db)
+        recognizers_list = list(analyzer.analyzer.registry.recognizers)
+        custom_count = max(0, len(recognizers_list) - 1)
+        anonymizer_module._analyzer = analyzer
+        log_audit(
+            db, action="reload", summary=f"Analyzer neu geladen ({custom_count} Recognizer)",
+            actor_id=user["id"], actor_username=user["username"],
+            target_type="analyzer", ip_address=_client_ip(request),
+        )
+        return RedirectResponse(url="/admin/entities", status_code=303)
+    except Exception as e:
+        logger.error(f"Error reloading analyzer from admin UI: {e}")
+        raise HTTPException(status_code=500, detail="Reload fehlgeschlagen")
+    finally:
+        db.close()
 
 
 # ============================================================================
@@ -1267,20 +1303,62 @@ async def delete_user_submit(
 
 PAGE_SIZE = 100
 
+# Audit actions/targets offered in the filter dropdowns.
+AUDIT_ACTIONS = [
+    "create", "update", "delete", "toggle", "reload",
+    "login", "login_failed", "password_change",
+]
+AUDIT_TARGET_TYPES = [
+    "entity", "pattern", "context_word", "allowed_value",
+    "api_key", "detector_model", "admin_user",
+]
+
+
+def _parse_audit_filters(request: Request) -> dict:
+    """Parse the shared audit filter query params (actor/action/type/date)."""
+    def _parse_date(value: str | None, end_of_day: bool = False):
+        if not value:
+            return None
+        try:
+            parsed = datetime.strptime(value, "%Y-%m-%d")
+        except ValueError:
+            return None
+        if end_of_day:
+            return parsed + timedelta(days=1, seconds=-1)
+        return parsed
+
+    return {
+        "actor_username": request.query_params.get("actor") or None,
+        "action": request.query_params.get("action") or None,
+        "target_type": request.query_params.get("target_type") or None,
+        "date_from": _parse_date(request.query_params.get("date_from")),
+        "date_to": _parse_date(request.query_params.get("date_to"), end_of_day=True),
+    }
+
+
+def _audit_filter_query_string(filters: dict, extra: dict | None = None) -> str:
+    """Rebuild a query string from parsed audit filters (+ extra params)."""
+    params = {
+        "actor": filters.get("actor_username"),
+        "action": filters.get("action"),
+        "target_type": filters.get("target_type"),
+        "date_from": filters.get("date_from").strftime("%Y-%m-%d") if filters.get("date_from") else None,
+        "date_to": filters.get("date_to").strftime("%Y-%m-%d") if filters.get("date_to") else None,
+        **(extra or {}),
+    }
+    return urlencode({k: v for k, v in params.items() if v})
+
 
 @admin_router.get("/audit", response_class=HTMLResponse)
 async def audit_page(request: Request, user: dict = Depends(require_admin)):
-    """Render the read-only audit log with simple filters."""
+    """Render the read-only audit log with filters."""
+    filters = _parse_audit_filters(request)
     db = SessionLocal()
     try:
-        actor = request.query_params.get("actor") or None
-        action = request.query_params.get("action") or None
-        target_type = request.query_params.get("target_type") or None
         page = max(1, int(request.query_params.get("page", 1)))
-        total = count_audit_logs(db, actor_username=actor, action=action, target_type=target_type)
+        total = count_audit_logs(db, **filters)
         entries = get_audit_logs(
-            db, limit=PAGE_SIZE, offset=(page - 1) * PAGE_SIZE,
-            actor_username=actor, action=action, target_type=target_type,
+            db, limit=PAGE_SIZE, offset=(page - 1) * PAGE_SIZE, **filters,
         )
         context = get_template_context(
             request,
@@ -1289,13 +1367,81 @@ async def audit_page(request: Request, user: dict = Depends(require_admin)):
             page=page,
             page_size=PAGE_SIZE,
             total_pages=max(1, (total + PAGE_SIZE - 1) // PAGE_SIZE),
-            filter_actor=actor or "",
-            filter_action=action or "",
-            filter_target_type=target_type or "",
+            filter_actor=filters["actor_username"] or "",
+            filter_action=filters["action"] or "",
+            filter_target_type=filters["target_type"] or "",
+            filter_date_from=filters["date_from"].strftime("%Y-%m-%d") if filters["date_from"] else "",
+            filter_date_to=filters["date_to"].strftime("%Y-%m-%d") if filters["date_to"] else "",
+            audit_actions=AUDIT_ACTIONS,
+            audit_target_types=AUDIT_TARGET_TYPES,
+            base_query=_audit_filter_query_string(filters),
         )
         return templates.TemplateResponse("audit/list.html", context)
     finally:
         db.close()
+
+
+@admin_router.get("/audit/export")
+async def audit_export(request: Request, user: dict = Depends(require_admin)):
+    """Export the (filtered) audit log as CSV or JSON (attachment download).
+
+    The audit log is append-only and records no changed values, so exporting
+    it does not expose any configuration secrets - only who/when/what.
+    """
+    from fastapi.responses import Response
+
+    filters = _parse_audit_filters(request)
+    fmt = (request.query_params.get("format") or "csv").lower()
+    db = SessionLocal()
+    try:
+        rows = list(iter_audit_logs(db, **filters))
+    finally:
+        db.close()
+
+    stamp = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
+    if fmt == "json":
+        payload = [
+            {
+                "created_at": r.created_at.isoformat() if r.created_at else None,
+                "actor_username": r.actor_username,
+                "action": r.action,
+                "target_type": r.target_type,
+                "target_id": r.target_id,
+                "target_label": r.target_label,
+                "summary": r.summary,
+                "ip_address": r.ip_address,
+            }
+            for r in rows
+        ]
+        body = json.dumps(payload, ensure_ascii=False, indent=2)
+        return Response(
+            content=body,
+            media_type="application/json",
+            headers={"Content-Disposition": f'attachment; filename="entityguard-audit-{stamp}.json"'},
+        )
+
+    buffer = io.StringIO()
+    writer = csv.writer(buffer)
+    writer.writerow([
+        "created_at", "actor_username", "action", "target_type",
+        "target_id", "target_label", "summary", "ip_address",
+    ])
+    for r in rows:
+        writer.writerow([
+            r.created_at.isoformat() if r.created_at else "",
+            r.actor_username or "",
+            r.action or "",
+            r.target_type or "",
+            r.target_id if r.target_id is not None else "",
+            r.target_label or "",
+            r.summary or "",
+            r.ip_address or "",
+        ])
+    return Response(
+        content=buffer.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="entityguard-audit-{stamp}.csv"'},
+    )
 
 
 # ============================================================================
