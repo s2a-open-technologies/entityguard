@@ -343,8 +343,8 @@ Das `docker-compose.yml` nutzt das benannte Volume `entityguard-data` (`/app/dat
 ### Fertige Images (GHCR, amd64 + arm64)
 
 ```bash
-docker pull ghcr.io/daemolition/entityguard:latest       # torch Standard (CUDA-Wheels auf amd64)
-docker pull ghcr.io/daemolition/entityguard:latest-cpu   # torch CPU-only, deutlich kleiner
+docker pull ghcr.io/s2a-open-technologies/entityguard:latest       # torch Standard (CUDA-Wheels auf amd64)
+docker pull ghcr.io/s2a-open-technologies/entityguard:latest-cpu   # torch CPU-only, deutlich kleiner
 ```
 
 Versions-Tags: `X.Y.Z`, `X.Y`, `X` (jeweils auch mit Suffix `-cpu`); `edge` / `edge-cpu` folgen dem `master`-Branch. Lokal bauen: `docker build --build-arg TORCH_VARIANT=cpu .`

@@ -42,7 +42,7 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 PYPROJECT = PROJECT_ROOT / "pyproject.toml"
 CHANGELOG = PROJECT_ROOT / "CHANGELOG.md"
-REPO_URL = "https://github.com/daemolition/guardrails"
+REPO_URL = "https://github.com/s2a-open-technologies/entityguard"
 
 VERSION_RE = re.compile(r"^\d+\.\d+\.\d+$")
 

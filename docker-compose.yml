@@ -2,7 +2,7 @@ services:
   entityguard:
     # Tag per ENTITYGUARD_TAG wählbar: latest (torch Standard), latest-cpu (CPU-only, kleiner),
     # X.Y.Z / X.Y.Z-cpu, edge. Lokal bauen: docker compose build
-    image: ghcr.io/daemolition/entityguard:${ENTITYGUARD_TAG:-latest}
+    image: ghcr.io/s2a-open-technologies/entityguard:${ENTITYGUARD_TAG:-latest}
     build: .
     container_name: entityguard
     ports:

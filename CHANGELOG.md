@@ -14,7 +14,7 @@ section as the GitHub Release notes.
 
 ### Added
 
-- **Docker-Images auf GHCR** (`ghcr.io/daemolition/entityguard`) für
+- **Docker-Images auf GHCR** (`ghcr.io/s2a-open-technologies/entityguard`) für
   `linux/amd64` und `linux/arm64`, gebaut durch `.github/workflows/docker.yml`
   (Tag `vX.Y.Z` → `X.Y.Z`, `X.Y`, `X`, `latest`; `master` → `edge`). Zweite
   Variante mit CPU-only torch unter Suffix `-cpu` (`TORCH_VARIANT=cpu`).
@@ -242,6 +242,6 @@ section as the GitHub Release notes.
 - Keine sicherheitsrelevanten Änderungen in diesem Release. (Der Fail-Closed-
   Grundsatz von `/api/v1/entityguard/sanitize` ist unverändert.)
 
-[Unreleased]: https://github.com/daemolition/guardrails/compare/v1.1.0...HEAD
-[1.1.0]: https://github.com/daemolition/guardrails/compare/v1.0.0...v1.1.0
-[1.0.0]: https://github.com/daemolition/guardrails/compare/v0.6.0...v1.0.0
+[Unreleased]: https://github.com/s2a-open-technologies/entityguard/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/s2a-open-technologies/entityguard/compare/v1.0.0...v1.1.0
+[1.0.0]: https://github.com/s2a-open-technologies/entityguard/compare/v0.6.0...v1.0.0
