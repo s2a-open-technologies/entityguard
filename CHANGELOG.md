@@ -14,6 +14,21 @@ section as the GitHub Release notes.
 
 ### Added
 
+- **Docker-Images auf GHCR** (`ghcr.io/daemolition/entityguard`) für
+  `linux/amd64` und `linux/arm64`, gebaut durch `.github/workflows/docker.yml`
+  (Tag `vX.Y.Z` → `X.Y.Z`, `X.Y`, `X`, `latest`; `master` → `edge`). Zweite
+  Variante mit CPU-only torch unter Suffix `-cpu` (`TORCH_VARIANT=cpu`).
+  Smoke-Test (`/health`) vor dem Push.
+- `.dockerignore`, `.env.example` und Dependabot-Konfiguration für GitHub
+  Actions (SHA-gepinnt) und Docker-Basisimage.
+
+### Changed
+
+- **Container**: läuft als Nicht-root-Benutzer, uv-Version gepinnt,
+  `alembic upgrade head` beim Containerstart statt beim Build (bestehende
+  Volumes werden bei Image-Updates migriert), `HF_HOME` im Datenvolume.
+  `docker-compose.yml` nutzt das GHCR-Image und deklariert das Volume.
+
 - **Compliance- und Policy-Dokumentation**: `SECURITY.md` (Sicherheits-
   architektur, Art.-32-Maßnahmen, Deployment-Hinweise), `DISCLAIMER.md`
   (kein Medizinprodukt, Erkennung nicht fehlerfrei), `CONTRIBUTING.md` und
@@ -30,6 +45,8 @@ section as the GitHub Release notes.
 
 ### Fixed
 
+- **README**: Datenbank-Volume war als Bind-Mount beschrieben, ist aber ein
+  benanntes Volume.
 - **README-Fehlerbehebung**: Der `reload`-Beispielbefehl enthielt den jetzt
   erforderlichen API-Key nicht.
 

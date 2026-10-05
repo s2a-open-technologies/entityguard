@@ -338,7 +338,16 @@ docker-compose logs -f entityguard
 
 ### Datenbank persistieren
 
-Das `docker-compose.yml` bindet das `data/`-Verzeichnis als Volume ein. Die SQLite-Datenbank (`data/entityguard.db`) bleibt bei `docker-compose down` erhalten.
+Das `docker-compose.yml` nutzt das benannte Volume `entityguard-data` (`/app/data`). Die SQLite-Datenbank und der HuggingFace-Modell-Cache bleiben bei `docker-compose down` erhalten. Beim Start führt der Container `alembic upgrade head` aus, ein Image-Update migriert also auch ein bestehendes Volume.
+
+### Fertige Images (GHCR, amd64 + arm64)
+
+```bash
+docker pull ghcr.io/daemolition/entityguard:latest       # torch Standard (CUDA-Wheels auf amd64)
+docker pull ghcr.io/daemolition/entityguard:latest-cpu   # torch CPU-only, deutlich kleiner
+```
+
+Versions-Tags: `X.Y.Z`, `X.Y`, `X` (jeweils auch mit Suffix `-cpu`); `edge` / `edge-cpu` folgen dem `master`-Branch. Lokal bauen: `docker build --build-arg TORCH_VARIANT=cpu .`
 
 ---
 

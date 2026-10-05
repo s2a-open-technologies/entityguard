@@ -1,7 +1,8 @@
-version: '3.8'
-
 services:
   entityguard:
+    # Tag per ENTITYGUARD_TAG wählbar: latest (torch Standard), latest-cpu (CPU-only, kleiner),
+    # X.Y.Z / X.Y.Z-cpu, edge. Lokal bauen: docker compose build
+    image: ghcr.io/daemolition/entityguard:${ENTITYGUARD_TAG:-latest}
     build: .
     container_name: entityguard
     ports:
@@ -13,12 +14,15 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 10s
+      start_period: 30s
     volumes:
       - entityguard-data:/app/data
     restart: unless-stopped
     networks:
       - entityguard-network
+
+volumes:
+  entityguard-data:
 
 networks:
   entityguard-network:
