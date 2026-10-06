@@ -35,7 +35,7 @@ Service listens on `http://localhost:9500` (`main.py` hardcodes port `9500`).
 
 - Docker Compose maps port `9500:9500` and the container health-check hits `localhost:9500`; `main.py` also listens on `9500`, so the mapping works out of the box.
 - The Dockerfile installs the spaCy model during the build, so the container should start ready.
-- The container runs as non-root (uid 10001) and `docker-entrypoint.sh` runs `alembic upgrade head` on every start (not at build time), so image updates migrate existing volumes. `HF_HOME=/app/data/hf` keeps downloaded transformer models in the volume.
+- The container process runs as non-root (uid 10001): `docker-entrypoint.sh` starts as root (no `USER` in the Dockerfile), `chown`s `/app/data` (old volumes were root-owned -> "readonly database"), then drops privileges via `setpriv` and runs `alembic upgrade head` on every start (not at build time), so image updates migrate existing volumes. `HF_HOME=/app/data/hf` keeps downloaded transformer models in the volume.
 - Images are built by `.github/workflows/docker.yml` for `linux/amd64,linux/arm64` and pushed to `ghcr.io/s2a-open-technologies/entityguard` on `vX.Y.Z` tags (`X.Y.Z`, `X.Y`, `X`, `latest`) and `master` (`edge`). Matrix variant `cpu` (`--build-arg TORCH_VARIANT=cpu`, CPU-only torch swapped in after `uv sync`, no re-lock) gets the suffix `-cpu` (`latest-cpu`, `X.Y.Z-cpu`, …). The default variant keeps the lockfile's torch (CUDA wheels on amd64).
 - The Compose service is named `entityguard`.
 

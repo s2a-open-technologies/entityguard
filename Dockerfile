@@ -46,12 +46,13 @@ COPY frontend/ ./frontend/
 COPY main.py ./
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 
-# Nicht-root-Benutzer; /app/data (SQLite, HF-Cache) gehört ihm
+# Nicht-root-Benutzer; /app/data (SQLite, HF-Cache) gehört ihm.
+# Kein USER hier: der Entrypoint startet als root, korrigiert den Besitzer
+# bestehender Volumes und wechselt dann per setpriv auf uid 10001.
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh && \
     useradd --system --uid 10001 --home-dir /app entityguard && \
     mkdir -p /app/data && \
     chown -R entityguard:entityguard /app/data
-USER entityguard
 
 # Port exponieren
 EXPOSE 9500

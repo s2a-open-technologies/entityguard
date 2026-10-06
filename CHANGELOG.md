@@ -45,6 +45,12 @@ section as the GitHub Release notes.
 
 ### Fixed
 
+- **Container: `attempt to write a readonly database` bei bestehenden
+  Volumes**: Volumes aus Images vor dem Nicht-root-Wechsel enthalten
+  root-eigene Dateien, die uid 10001 nicht schreiben kann (Migration scheiterte
+  z. B. an `UPDATE recognizers …`). Der Entrypoint startet jetzt als root,
+  korrigiert den Besitzer von `/app/data` und wechselt per `setpriv` auf den
+  unprivilegierten Benutzer (kein `USER` mehr im Dockerfile).
 - **README**: Datenbank-Volume war als Bind-Mount beschrieben, ist aber ein
   benanntes Volume.
 - **README-Fehlerbehebung**: Der `reload`-Beispielbefehl enthielt den jetzt
