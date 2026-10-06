@@ -12,6 +12,8 @@ section as the GitHub Release notes.
 
 ## [Unreleased]
 
+## [1.1.1] — 2026-10-06
+
 ### Added
 
 - **Docker-Images auf GHCR** (`ghcr.io/s2a-open-technologies/entityguard`) für
@@ -248,6 +250,7 @@ section as the GitHub Release notes.
 - Keine sicherheitsrelevanten Änderungen in diesem Release. (Der Fail-Closed-
   Grundsatz von `/api/v1/entityguard/sanitize` ist unverändert.)
 
-[Unreleased]: https://github.com/s2a-open-technologies/entityguard/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/s2a-open-technologies/entityguard/compare/v1.1.1...HEAD
+[1.1.1]: https://github.com/s2a-open-technologies/entityguard/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/s2a-open-technologies/entityguard/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/s2a-open-technologies/entityguard/compare/v0.6.0...v1.0.0
