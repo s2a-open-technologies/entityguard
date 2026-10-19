@@ -16,6 +16,7 @@ You should have received a copy of the GNU Affero General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 
+import hmac
 import logging
 import re
 import secrets
@@ -23,6 +24,7 @@ import secrets
 import bcrypt
 from fastapi import HTTPException, Request, status
 
+from backend import config
 from backend.database import SessionLocal
 from backend.database.crud import get_active_api_keys, touch_api_key
 from backend.database.models import ApiKeyModel
@@ -75,9 +77,10 @@ def require_api_key(request: Request) -> dict:
     FastAPI dependency: authenticate a request against the stored API keys.
 
     Accepts the key either as ``Authorization: Bearer <key>`` or as an
-    ``X-API-Key`` header. Only active keys from the database are accepted -
-    there is no environment fallback. While no active key exists, every
-    request is rejected with HTTP 401 (fail-closed).
+    ``X-API-Key`` header. Accepted are the active keys from the database plus
+    any keys from ``ENTITYGUARD_API_KEY``/``ENTITYGUARD_API_KEY_FILE``
+    (``config.API_KEYS_FROM_ENV``). While neither exists, every request is
+    rejected with HTTP 401 (fail-closed).
 
     Args:
         request: The incoming FastAPI request.
@@ -89,10 +92,20 @@ def require_api_key(request: Request) -> dict:
         HTTPException: 401 if the header is missing, malformed or unknown.
     """
     provided = _extract_key(request)
+    env_keys = config.API_KEYS_FROM_ENV
+
+    if provided and env_keys:
+        provided_bytes = provided.encode("utf-8")
+        # Check every key (no early exit) so timing does not reveal which matched.
+        matched = False
+        for env_key in env_keys:
+            matched |= hmac.compare_digest(provided_bytes, env_key.encode("utf-8"))
+        if matched:
+            return {"id": None, "name": "ENV", "key_prefix": "env"}
 
     with SessionLocal() as db:
         active_keys = get_active_api_keys(db)
-        if not active_keys:
+        if not active_keys and not env_keys:
             logger.warning("API request rejected: no active API key configured")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,

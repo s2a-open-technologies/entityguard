@@ -45,6 +45,7 @@ LLM. Siehe [`docs/pii.md`](pii.md) für den detaillierten Ablauf.
 | Kategorie | Beispiele | Wo im System |
 |---|---|---|
 | Zu anonymisierender Text (im Transit) | Freitext mit Namen, Orten, Daten, Fallnummern, ggf. Gesundheitsdaten | **Nur im Speicher** während der Anfrage; wird **nicht persistiert** |
+| Zu anonymisierendes Bild (im Transit) | PNG/JPEG/WebP mit gedrucktem Text (z. B. Screenshot, Scan) | **Nur im Speicher** während der Anfrage; wird **nicht persistiert**; OCR-Text und Boxen sind flüchtig |
 | `mapping` (Platzhalter → Original) | `{"[PERSON_1]": "Müller"}` | **Nur im HTTP-Response an den Aufrufer**; wird **nicht persistiert** |
 | Konfigurationsdaten | Entitäten, Muster (Regex), Kontextwörter, Ausnahmeliste | `entities`, `patterns`, `context_words`, `allowed_values` (SQLite) |
 | Nutzerkonto-Daten (Admin/Viewer, keine Patienten) | Benutzername, bcrypt-Passwort-Hash, Rolle | `admin_users` (SQLite) |
@@ -60,14 +61,19 @@ LLM. Siehe [`docs/pii.md`](pii.md) für den detaillierten Ablauf.
 | 2 | Analyse | Erkannte Entitäten (Presidio + spaCy + Muster + aktive Modelle) | Intern, flüchtig | `backend/components/cstm_analyzer.py` |
 | 3 | Maskierung | Text mit indizierten Platzhaltern + Mapping | Antwort an den Aufrufer | `cstm_analyzer.py::process_text()` |
 | 4 | Trace (optional) | **Nur Metadaten** (Länge, Maskierungsanzahl, Latenz, …) | `request_trace` | `backend/tracing.py::record_trace` |
-| 5 | LLM-Aufruf (**durch den Aufrufer**) | Maskierter Text | Vom Betreiber konfigurierter LLM-Endpunkt | **Nicht Teil dieses Dienstes** |
-| 6 | Admin-Aktionen | Login, Konfigurationsänderungen | `audit_log` | `log_audit(...)` in `backend/admin/routes.py` |
+| 5 | LLM-Aufruf (**durch den Aufrufer**) | Maskierter Text bzw. redigiertes Bild | Vom Betreiber konfigurierter LLM-Endpunkt | **Nicht Teil dieses Dienstes** |
+| 6 | Bild-Anfrage (optional) | Bild mit Klarnamen + API-Key | EntityGuard (`/api/v1/sanitize/image`) | `backend/views/anonymizer.py` |
+| 7 | Bild-OCR + Maskierung | OCR-Text, Entitäten, Boxen | Intern, flüchtig | `backend/components/ocr.py`, `image_sanitizer.py` |
+| 8 | Admin-Aktionen | Login, Konfigurationsänderungen | `audit_log` | `log_audit(...)` in `backend/admin/routes.py` |
 
 ## Was EntityGuard NICHT speichert
 
 - **Keinen Rohtext** und **kein `mapping`** — weder im Trace noch im Audit-Log.
 - **Kein Maskierungsergebnis** (`sanitized_text`) — der Aufrufer erhält es nur
   als HTTP-Response und ist für die weitere Verarbeitung verantwortlich.
+- **Kein Bild, keinen OCR-Text und keine Boxen** — die Bildverarbeitung läuft
+  ausschließlich im Arbeitsspeicher; auch das redigierte PNG wird nicht
+  gespeichert.
 - **Keine Verbindungsdaten** außer der Client-IP im Audit-Log (bei Login und
   Konfigurationsänderungen).
 
@@ -82,6 +88,7 @@ kein Datenspeicher für Patientendaten.
 |---|---|---|
 | `admin_users.password_hash` | ✅ (Hash) | bcrypt, kein Klartext |
 | `api_keys.key_hash` | ✅ (Hash) | bcrypt, kein Klartext; Klartext-Anzeige einmalig |
+| `ENTITYGUARD_API_KEY` / `_FILE` | – (nicht gespeichert) | Nur in der Prozess-Umgebung bzw. im Docker Secret; nie in DB oder Trace (dort nur Präfix `env`) |
 | Konfiguration, Audit-Log, Trace | ❌ | SQLite-Datei unverschlüsselt — die Datei selbst schützen (Dateisystem/Betriebssystem) |
 
 EntityGuard besitzt **keine** Feldverschlüsselung (kein `ENCRYPTION_KEY`).
@@ -140,6 +147,12 @@ automatischen Löschung, damit die Nachvollziehbarkeit erhalten bleibt.
 - **Sessions sind in-memory** (`backend/admin/auth.py::_sessions`): Ein Neustart
   meldet alle Admin/Viewer ab; Multi-Instance-Deployments teilen keine Sessions.
 - **Audit-Log ohne automatische Löschung** — bewusst append-only.
+- **Bild-OCR ist keine vollständige Bildredaktion**: Erfasst wird nur
+  gedruckter Text. Handschrift, Gesichter, Logos, Diagramme und schlechte
+  Scans bleiben sichtbar; für strenge Vorgaben Bilder blockieren
+  (`image_mode=block`) oder `OCR_REDACTION=all_text` mit Restrisiko nutzen.
+  RapidOCR kann beim ersten Einsatz Modelle nachladen; im Offline-Betrieb
+  vorher cachen.
 
 ## Verweise
 

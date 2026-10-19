@@ -1,0 +1,156 @@
+{% extends "base.html" %}
+
+{% block title %}Bild-OCR{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Bild-OCR</h1>
+</div>
+
+<p class="help-text">
+    Einstellungen für das Abfangen von Bildern. Per OCR wird Text aus Bildern gelesen,
+    durch dieselbe Erkennung wie normaler Text geschickt und anschließend im Bild
+    geschwärzt. Umgebungsvariablen haben Vorrang vor den Werten hier und sind für
+    Headless-Container ohne Admin-Port gedacht.
+</p>
+
+<div class="alert {% if settings.enabled %}alert-success{% else %}alert-error{% endif %}">
+    {% if settings.enabled %}
+    Bildverarbeitung ist aktiv.
+    {% else %}
+    Bildverarbeitung ist deaktiviert. Der Endpoint antwortet mit 404.
+    {% endif %}
+    {% if settings.warnings %}
+    <br>{{ settings.warnings | join(' ') }}
+    {% endif %}
+</div>
+
+<div class="section">
+    <h2>Verfügbare Engines</h2>
+    <div class="detail-grid">
+        <div class="detail-card">
+            <h3>Tesseract</h3>
+            <p class="help-text mb-0">{{ engines.tesseract }} (CPU)</p>
+        </div>
+        <div class="detail-card">
+            <h3>RapidOCR</h3>
+            <p class="help-text mb-0">CPU: {{ engines.rapidocr_cpu }}<br>GPU: {{ engines.rapidocr_cuda }}</p>
+        </div>
+    </div>
+</div>
+
+<form method="POST" action="/admin/ocr" class="form">
+    <div class="form-group">
+        <label class="checkbox-label">
+            {% if 'ocr_enabled' in env_overrides %}<input type="hidden" name="ocr_enabled" value="{{ values.ocr_enabled }}">{% endif %}
+            <input type="checkbox" name="ocr_enabled" value="true" {% if values.ocr_enabled == 'true' %}checked{% endif %} {% if 'ocr_enabled' in env_overrides %}disabled{% endif %}>
+            Bildverarbeitung aktivieren
+        </label>
+        <small>Deaktiviert liefert <code>/api/v1/sanitize/image</code> und die Admin-Vorschau 404.</small>
+        {% if 'ocr_enabled' in env_overrides %}<small>Per {{ env_names.ocr_enabled }} überschrieben.</small>{% endif %}
+    </div>
+
+    <div class="form-group">
+        <label for="ocr_engine">OCR-Engine</label>
+        {% if 'ocr_engine' in env_overrides %}<input type="hidden" name="ocr_engine" value="{{ values.ocr_engine }}">{% endif %}
+        <select id="ocr_engine" name="ocr_engine" {% if 'ocr_engine' in env_overrides %}disabled{% endif %}>
+            <option value="auto" {% if values.ocr_engine == 'auto' %}selected{% endif %}>Automatisch (GPU-RapidOCR, sonst Tesseract)</option>
+            <option value="tesseract" {% if values.ocr_engine == 'tesseract' %}selected{% endif %}>Tesseract (CPU)</option>
+            <option value="rapidocr" {% if values.ocr_engine == 'rapidocr' %}selected{% endif %}>RapidOCR (CPU/GPU)</option>
+        </select>
+        <small>Bei <code>auto</code> wird RapidOCR nur mit verfügbarer CUDA-GPU genutzt, sonst Tesseract.</small>
+        {% if 'ocr_engine' in env_overrides %}<small>Per {{ env_names.ocr_engine }} überschrieben.</small>{% endif %}
+    </div>
+
+    <div class="form-group">
+        <label for="ocr_device">RapidOCR-Gerät</label>
+        {% if 'ocr_device' in env_overrides %}<input type="hidden" name="ocr_device" value="{{ values.ocr_device }}">{% endif %}
+        <select id="ocr_device" name="ocr_device" {% if 'ocr_device' in env_overrides %}disabled{% endif %}>
+            <option value="auto" {% if values.ocr_device == 'auto' %}selected{% endif %}>Automatisch</option>
+            <option value="cpu" {% if values.ocr_device == 'cpu' %}selected{% endif %}>CPU</option>
+            <option value="cuda" {% if values.ocr_device == 'cuda' %}selected{% endif %}>CUDA</option>
+        </select>
+        <small>Ist CUDA angefordert, aber nicht verfügbar, wird auf Tesseract zurückgefallen.</small>
+        {% if 'ocr_device' in env_overrides %}<small>Per {{ env_names.ocr_device }} überschrieben.</small>{% endif %}
+    </div>
+
+    <div class="form-group">
+        <label for="ocr_redaction">Schwärzung</label>
+        {% if 'ocr_redaction' in env_overrides %}<input type="hidden" name="ocr_redaction" value="{{ values.ocr_redaction }}">{% endif %}
+        <select id="ocr_redaction" name="ocr_redaction" {% if 'ocr_redaction' in env_overrides %}disabled{% endif %}>
+            <option value="entity" {% if values.ocr_redaction == 'entity' %}selected{% endif %}>Nur erkannte Wörter</option>
+            <option value="line" {% if values.ocr_redaction == 'line' %}selected{% endif %}>Ganze OCR-Zeile (empfohlen)</option>
+            <option value="all_text" {% if values.ocr_redaction == 'all_text' %}selected{% endif %}>Jeder erkannte Text</option>
+        </select>
+        <small><code>line</code> schwärzt die komplette Zeile um einen Treffer und ist robuster gegen Textreste.</small>
+        {% if 'ocr_redaction' in env_overrides %}<small>Per {{ env_names.ocr_redaction }} überschrieben.</small>{% endif %}
+    </div>
+
+    <div class="form-group">
+        <label for="ocr_lang">Tesseract-Sprachen</label>
+        {% if 'ocr_lang' in env_overrides %}<input type="hidden" name="ocr_lang" value="{{ values.ocr_lang }}">{% endif %}
+        <input type="text" id="ocr_lang" name="ocr_lang" value="{{ values.ocr_lang }}" {% if 'ocr_lang' in env_overrides %}disabled{% endif %} placeholder="deu+eng">
+        <small>Mehrere Sprachen mit <code>+</code> verbinden. Die Sprachpakete müssen im Container installiert sein.</small>
+        {% if 'ocr_lang' in env_overrides %}<small>Per {{ env_names.ocr_lang }} überschrieben.</small>{% endif %}
+    </div>
+
+    <div class="form-group">
+        <label for="ocr_min_confidence">Mindest-Konfidenz</label>
+        {% if 'ocr_min_confidence' in env_overrides %}<input type="hidden" name="ocr_min_confidence" value="{{ values.ocr_min_confidence }}">{% endif %}
+        <input type="text" id="ocr_min_confidence" name="ocr_min_confidence" value="{{ values.ocr_min_confidence }}" {% if 'ocr_min_confidence' in env_overrides %}disabled{% endif %}>
+        <small>Werte zwischen 0 und 1. OCR-Zeilen darunter werden konservativ geschwärzt, weil der Inhalt unsicher ist.</small>
+        {% if 'ocr_min_confidence' in env_overrides %}<small>Per {{ env_names.ocr_min_confidence }} überschrieben.</small>{% endif %}
+    </div>
+
+    <div class="form-group">
+        <label class="checkbox-label">
+            {% if 'ocr_verify' in env_overrides %}<input type="hidden" name="ocr_verify" value="{{ values.ocr_verify }}">{% endif %}
+            <input type="checkbox" name="ocr_verify" value="true" {% if values.ocr_verify == 'true' %}checked{% endif %} {% if 'ocr_verify' in env_overrides %}disabled{% endif %}>
+            Redaktion verifizieren
+        </label>
+        <small>Das geschwärzte Bild wird erneut per OCR geprüft. Werden noch sensible Stellen erkannt, schlägt die Anfrage fehl.</small>
+        {% if 'ocr_verify' in env_overrides %}<small>Per {{ env_names.ocr_verify }} überschrieben.</small>{% endif %}
+    </div>
+
+    <div class="form-group">
+        <label for="image_max_bytes">Maximale Bildgröße (Bytes)</label>
+        {% if 'image_max_bytes' in env_overrides %}<input type="hidden" name="image_max_bytes" value="{{ values.image_max_bytes }}">{% endif %}
+        <input type="text" id="image_max_bytes" name="image_max_bytes" value="{{ values.image_max_bytes }}" {% if 'image_max_bytes' in env_overrides %}disabled{% endif %}>
+        {% if 'image_max_bytes' in env_overrides %}<small>Per {{ env_names.image_max_bytes }} überschrieben.</small>{% endif %}
+    </div>
+
+    <div class="form-group">
+        <label for="image_max_pixels">Maximale Pixelzahl</label>
+        {% if 'image_max_pixels' in env_overrides %}<input type="hidden" name="image_max_pixels" value="{{ values.image_max_pixels }}">{% endif %}
+        <input type="text" id="image_max_pixels" name="image_max_pixels" value="{{ values.image_max_pixels }}" {% if 'image_max_pixels' in env_overrides %}disabled{% endif %}>
+        {% if 'image_max_pixels' in env_overrides %}<small>Per {{ env_names.image_max_pixels }} überschrieben.</small>{% endif %}
+    </div>
+
+    <div class="form-group">
+        <label for="ocr_timeout_seconds">OCR-Zeitlimit (Sekunden)</label>
+        {% if 'ocr_timeout_seconds' in env_overrides %}<input type="hidden" name="ocr_timeout_seconds" value="{{ values.ocr_timeout_seconds }}">{% endif %}
+        <input type="text" id="ocr_timeout_seconds" name="ocr_timeout_seconds" value="{{ values.ocr_timeout_seconds }}" {% if 'ocr_timeout_seconds' in env_overrides %}disabled{% endif %}>
+        {% if 'ocr_timeout_seconds' in env_overrides %}<small>Per {{ env_names.ocr_timeout_seconds }} überschrieben.</small>{% endif %}
+    </div>
+
+    <div class="form-actions">
+        <button type="submit" class="btn btn-primary">Speichern</button>
+        <a href="/admin/sanitize" class="btn btn-secondary">Zur Bildvorschau</a>
+    </div>
+</form>
+
+<div class="section">
+    <h2>Umgebungsvariablen (Headless)</h2>
+    <p class="help-text">
+        Diese Variablen überschreiben die Admin-Werte und werden nicht in die Datenbank geschrieben:
+    </p>
+    <div class="detail-grid">
+        {% for key, env_name in env_names.items() %}
+        <div class="detail-card">
+            <h3><code>{{ env_name }}</code></h3>
+            <p class="help-text mb-0">Einstellung: <code>{{ key }}</code>{% if key in env_overrides %} — aktuell aktiv{% endif %}</p>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}

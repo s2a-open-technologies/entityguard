@@ -1,55 +1,115 @@
 {% extends "base.html" %}
 
-{% block title %}Text anonymisieren{% endblock %}
+{% block title %}Anonymisieren{% endblock %}
 
 {% block content_class %}content-fullheight{% endblock %}
 
 {% block content %}
 <div class="sanitize-wrap">
     <div class="page-header">
-        <h1>Text anonymisieren</h1>
+        <h1>Anonymisieren</h1>
+        <div class="sanitize-mode-switch" role="tablist" aria-label="Modus">
+            <button type="button" id="mode-text-btn" class="tab-btn active" role="tab" aria-selected="true">Text</button>
+            <button type="button" id="mode-image-btn" class="tab-btn" role="tab" aria-selected="false">Bild</button>
+        </div>
     </div>
 
-    <p class="help-text">
+    <p class="help-text" id="text-help">
         Links Text schreiben oder eine .txt/.md-Datei laden &ndash; rechts erscheint live die anonymisierte Version.
         Fahre mit der Maus über einen Platzhalter, um den Originalwert zu sehen.
     </p>
+    <p class="help-text" id="image-help" style="display: none;">
+        Bild laden &ndash; links siehst du das Original mit roten Markierungen, rechts das redigierte Ergebnis.
+        Der erkannte Text wird zusätzlich maskiert angezeigt.
+    </p>
 
-    <div class="sanitize-grid">
-        <section class="sanitize-panel" id="input-panel">
-            <div class="sanitize-panel-header">
-                <h2 class="sanitize-panel-title">Original</h2>
-                <div class="sanitize-panel-actions">
-                    <button type="button" id="load-file-btn" class="btn btn-secondary btn-sm">Datei laden</button>
-                    <input type="file" id="file-input" accept=".txt,.md,text/plain,text/markdown" hidden>
-                    <button type="button" id="clear-btn" class="btn btn-secondary btn-sm">Leeren</button>
+    <div id="text-mode">
+        <div class="sanitize-grid">
+            <section class="sanitize-panel" id="input-panel">
+                <div class="sanitize-panel-header">
+                    <h2 class="sanitize-panel-title">Original</h2>
+                    <div class="sanitize-panel-actions">
+                        <button type="button" id="load-file-btn" class="btn btn-secondary btn-sm">Datei laden</button>
+                        <input type="file" id="file-input" accept=".txt,.md,text/plain,text/markdown" hidden>
+                        <button type="button" id="clear-btn" class="btn btn-secondary btn-sm">Leeren</button>
+                    </div>
                 </div>
-            </div>
-            <textarea id="input-text" class="sanitize-input" spellcheck="false"
-                      placeholder="Text hier eingeben oder eine Datei hineinziehen ..."></textarea>
-            <div id="file-error" class="sanitize-hint sanitize-hint-error" style="display: none;"></div>
-            <div class="drop-overlay" id="drop-overlay">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-                    <polyline points="7 10 12 15 17 10"/>
-                    <line x1="12" y1="15" x2="12" y2="3"/>
-                </svg>
-                <span>Datei hier ablegen</span>
-            </div>
-        </section>
+                <textarea id="input-text" class="sanitize-input" spellcheck="false"
+                          placeholder="Text hier eingeben oder eine Datei hineinziehen ..."></textarea>
+                <div id="file-error" class="sanitize-hint sanitize-hint-error" style="display: none;"></div>
+                <div class="drop-overlay" id="drop-overlay">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                        <polyline points="7 10 12 15 17 10"/>
+                        <line x1="12" y1="15" x2="12" y2="3"/>
+                    </svg>
+                    <span>Datei hier ablegen</span>
+                </div>
+            </section>
 
-        <section class="sanitize-panel">
-            <div class="sanitize-panel-header">
-                <h2 class="sanitize-panel-title">Anonymisiert</h2>
-                <div class="sanitize-panel-actions">
-                    <span id="status" class="sanitize-status" style="display: none;"></span>
-                    <button type="button" id="copy-btn" class="btn btn-secondary btn-sm" style="display: none;">Kopieren</button>
+            <section class="sanitize-panel">
+                <div class="sanitize-panel-header">
+                    <h2 class="sanitize-panel-title">Anonymisiert</h2>
+                    <div class="sanitize-panel-actions">
+                        <span id="status" class="sanitize-status" style="display: none;"></span>
+                        <button type="button" id="copy-btn" class="btn btn-secondary btn-sm" style="display: none;">Kopieren</button>
+                    </div>
                 </div>
-            </div>
-            <div id="output-text" class="sanitize-output"></div>
-            <div id="type-chips" class="tags" style="display: none;"></div>
-            <p class="sanitize-hint">Erkannte Stellen sind farblich markiert &ndash; Originalwert per Maus-Hover anzeigen.</p>
-        </section>
+                <div id="output-text" class="sanitize-output"></div>
+                <div id="type-chips" class="tags" style="display: none;"></div>
+                <p class="sanitize-hint">Erkannte Stellen sind farblich markiert &ndash; Originalwert per Maus-Hover anzeigen.</p>
+            </section>
+        </div>
+    </div>
+
+    <div id="image-mode" style="display: none;">
+        <div class="sanitize-grid">
+            <section class="sanitize-panel" id="image-input-panel">
+                <div class="sanitize-panel-header">
+                    <h2 class="sanitize-panel-title">Original</h2>
+                    <div class="sanitize-panel-actions">
+                        <button type="button" id="load-image-btn" class="btn btn-secondary btn-sm">Bild laden</button>
+                        <input type="file" id="image-input" accept="image/png,image/jpeg,image/webp" hidden>
+                        <button type="button" id="clear-image-btn" class="btn btn-secondary btn-sm">Leeren</button>
+                    </div>
+                </div>
+                <div class="image-preview-wrap" id="image-original-wrap">
+                    <span class="image-placeholder" id="image-placeholder">Bild hier ablegen (PNG, JPEG, WebP)</span>
+                    <div class="image-stage" id="image-stage">
+                        <img id="image-original" alt="Originalbild" style="display: none;">
+                        <canvas id="image-overlay"></canvas>
+                    </div>
+                </div>
+                <div id="image-error" class="sanitize-hint sanitize-hint-error" style="display: none;"></div>
+                <p class="sanitize-hint">Rote Markierungen zeigen die Bereiche, die geschwärzt werden.</p>
+                <div class="drop-overlay" id="image-drop-overlay">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                        <polyline points="7 10 12 15 17 10"/>
+                        <line x1="12" y1="15" x2="12" y2="3"/>
+                    </svg>
+                    <span>Bild hier ablegen</span>
+                </div>
+            </section>
+
+            <section class="sanitize-panel">
+                <div class="sanitize-panel-header">
+                    <h2 class="sanitize-panel-title">Redigiert</h2>
+                    <div class="sanitize-panel-actions">
+                        <span id="image-status" class="sanitize-status" style="display: none;"></span>
+                        <button type="button" id="download-image-btn" class="btn btn-secondary btn-sm" style="display: none;">PNG laden</button>
+                    </div>
+                </div>
+                <div class="image-preview-wrap" id="image-redacted-wrap">
+                    <span class="image-placeholder" id="image-redacted-placeholder">Das redigierte Bild erscheint hier ...</span>
+                    <img id="image-redacted" alt="Redigiertes Bild" style="display: none;">
+                </div>
+                <div id="image-meta" class="image-meta"></div>
+                <div id="image-chips" class="tags" style="display: none;"></div>
+                <div id="image-ocr-output" class="sanitize-output is-empty" style="min-height: 7rem; margin-top: 0.75rem;">Der erkannte Text erscheint hier ...</div>
+                <p class="sanitize-hint">Der maskierte OCR-Text hilft beim Prüfen &ndash; Originalwert per Maus-Hover anzeigen.</p>
+            </section>
+        </div>
     </div>
 </div>
 
@@ -67,11 +127,39 @@ document.addEventListener('DOMContentLoaded', function() {
     const typeChips = document.getElementById('type-chips');
     const dropOverlay = document.getElementById('drop-overlay');
 
+    const textMode = document.getElementById('text-mode');
+    const imageMode = document.getElementById('image-mode');
+    const modeTextBtn = document.getElementById('mode-text-btn');
+    const modeImageBtn = document.getElementById('mode-image-btn');
+    const textHelp = document.getElementById('text-help');
+    const imageHelp = document.getElementById('image-help');
+
+    const imageInputPanel = document.getElementById('image-input-panel');
+    const imageInput = document.getElementById('image-input');
+    const loadImageBtn = document.getElementById('load-image-btn');
+    const clearImageBtn = document.getElementById('clear-image-btn');
+    const imageOriginal = document.getElementById('image-original');
+    const imageOverlay = document.getElementById('image-overlay');
+    const imagePlaceholder = document.getElementById('image-placeholder');
+    const imageRedacted = document.getElementById('image-redacted');
+    const imageRedactedPlaceholder = document.getElementById('image-redacted-placeholder');
+    const imageError = document.getElementById('image-error');
+    const imageStatus = document.getElementById('image-status');
+    const imageMeta = document.getElementById('image-meta');
+    const imageChips = document.getElementById('image-chips');
+    const imageOcrOutput = document.getElementById('image-ocr-output');
+    const imageDropOverlay = document.getElementById('image-drop-overlay');
+    const downloadImageBtn = document.getElementById('download-image-btn');
+
     const DEBOUNCE_MS = 600;
     let debounceTimer = null;
     let requestSeq = 0;
     let lastSanitized = '';
     let dragDepth = 0;
+    let imageDragDepth = 0;
+    let imageRequestSeq = 0;
+    let lastRedactedDataUri = '';
+    let originalObjectUrl = '';
 
     function isAllowedFile(file) {
         return /\.(txt|md)$/.test(file.name.toLowerCase());
@@ -133,9 +221,9 @@ document.addEventListener('DOMContentLoaded', function() {
         return t || key;
     }
 
-    function renderOutput(sanitized, mapping) {
-        outputText.classList.remove('is-empty');
-        outputText.replaceChildren();
+    function renderInto(container, sanitized, mapping) {
+        container.classList.remove('is-empty');
+        container.replaceChildren();
 
         const keys = Object.keys(mapping).sort((a, b) => b.length - a.length);
         const frag = document.createDocumentFragment();
@@ -167,14 +255,18 @@ document.addEventListener('DOMContentLoaded', function() {
             rest = rest.slice(idx + key.length);
         }
 
-        outputText.appendChild(frag);
+        container.appendChild(frag);
     }
 
-    function renderChips(mapping) {
-        typeChips.replaceChildren();
+    function renderOutput(sanitized, mapping) {
+        renderInto(outputText, sanitized, mapping);
+    }
+
+    function renderChipsInto(container, mapping) {
+        container.replaceChildren();
         const keys = Object.keys(mapping);
         if (keys.length === 0) {
-            typeChips.style.display = 'none';
+            container.style.display = 'none';
             return;
         }
         const counts = {};
@@ -186,9 +278,13 @@ document.addEventListener('DOMContentLoaded', function() {
             const chip = document.createElement('span');
             chip.className = 'tag';
             chip.textContent = type + ' \u00d7 ' + count;
-            typeChips.appendChild(chip);
+            container.appendChild(chip);
         }
-        typeChips.style.display = 'flex';
+        container.style.display = 'flex';
+    }
+
+    function renderChips(mapping) {
+        renderChipsInto(typeChips, mapping);
     }
 
     async function doSanitize() {
@@ -234,6 +330,248 @@ document.addEventListener('DOMContentLoaded', function() {
             showStatus('Fehler: ' + error.message, true, false);
         }
     }
+
+    function setMode(mode) {
+        const isText = mode === 'text';
+        textMode.style.display = isText ? '' : 'none';
+        imageMode.style.display = isText ? 'none' : '';
+        textHelp.style.display = isText ? '' : 'none';
+        imageHelp.style.display = isText ? 'none' : '';
+        modeTextBtn.classList.toggle('active', isText);
+        modeImageBtn.classList.toggle('active', !isText);
+        modeTextBtn.setAttribute('aria-selected', String(isText));
+        modeImageBtn.setAttribute('aria-selected', String(!isText));
+    }
+
+    function isAllowedImage(file) {
+        return file && (/^image\/(png|jpeg|webp)$/.test(file.type) || /\.(png|jpe?g|webp)$/i.test(file.name));
+    }
+
+    function showImageError(message) {
+        imageError.textContent = message;
+        imageError.style.display = 'block';
+    }
+
+    function clearImageError() {
+        imageError.style.display = 'none';
+    }
+
+    function showImageStatus(text, isError, withSpinner) {
+        imageStatus.style.display = 'inline-flex';
+        imageStatus.classList.toggle('error', !!isError);
+        imageStatus.replaceChildren();
+        if (withSpinner) {
+            const spinner = document.createElement('span');
+            spinner.className = 'spinner';
+            imageStatus.appendChild(spinner);
+        }
+        imageStatus.appendChild(document.createTextNode(text));
+    }
+
+    function hideImageStatus() {
+        imageStatus.style.display = 'none';
+    }
+
+    function setImageEmpty() {
+        imageOriginal.style.display = 'none';
+        imageRedacted.style.display = 'none';
+        imagePlaceholder.style.display = '';
+        imageRedactedPlaceholder.style.display = '';
+        imageOverlay.width = 0;
+        imageOverlay.height = 0;
+        imageMeta.replaceChildren();
+        imageChips.style.display = 'none';
+        imageOcrOutput.classList.add('is-empty');
+        imageOcrOutput.textContent = 'Der erkannte Text erscheint hier ...';
+        downloadImageBtn.style.display = 'none';
+        lastRedactedDataUri = '';
+    }
+
+    function drawImageOverlay(redactions, width, height) {
+        imageOverlay.width = width;
+        imageOverlay.height = height;
+        const ctx = imageOverlay.getContext('2d');
+        ctx.clearRect(0, 0, width, height);
+        const lineWidth = Math.max(2, Math.round(width / 600));
+        ctx.lineWidth = lineWidth;
+        ctx.strokeStyle = '#dc2626';
+        ctx.fillStyle = 'rgba(220, 38, 38, 0.28)';
+        for (const redaction of redactions || []) {
+            const box = redaction.box || [];
+            if (box.length !== 4) continue;
+            const [x0, y0, x1, y1] = box;
+            ctx.fillRect(x0, y0, x1 - x0, y1 - y0);
+            ctx.strokeRect(x0, y0, x1 - x0, y1 - y0);
+        }
+    }
+
+    function renderImageMeta(data) {
+        imageMeta.replaceChildren();
+        const maskCount = Object.keys(data.mapping || {}).length;
+        const redactionCount = (data.redactions || []).length;
+        const parts = [
+            (data.ocr_engine === 'rapidocr' ? 'RapidOCR' : 'Tesseract') + ' (' + (data.ocr_device || 'cpu').toUpperCase() + ')',
+            Math.round(data.latency_ms || 0) + ' ms',
+            'Konfidenz ' + Math.round((data.ocr_confidence || 0) * 100) + ' %',
+            maskCount > 0 ? maskCount + ' Stellen' : redactionCount + ' Bereiche'
+        ];
+        for (const text of parts) {
+            const span = document.createElement('span');
+            span.textContent = text;
+            imageMeta.appendChild(span);
+        }
+        for (const warning of data.warnings || []) {
+            const span = document.createElement('span');
+            span.className = 'sanitize-hint-error';
+            span.textContent = warning;
+            imageMeta.appendChild(span);
+        }
+    }
+
+    async function sendImage(file) {
+        const seq = ++imageRequestSeq;
+        showImageStatus('Analysiert ...', false, true);
+        clearImageError();
+        imageRedacted.style.display = 'none';
+        imageRedactedPlaceholder.style.display = '';
+        imageMeta.replaceChildren();
+        imageChips.style.display = 'none';
+        imageOcrOutput.classList.add('is-empty');
+        imageOcrOutput.textContent = 'Der erkannte Text erscheint hier ...';
+        downloadImageBtn.style.display = 'none';
+        lastRedactedDataUri = '';
+
+        const formData = new FormData();
+        formData.append('file', file);
+
+        try {
+            const response = await fetch('/admin/sanitize/api/image', {
+                method: 'POST',
+                body: formData
+            });
+            if (!response.ok) {
+                let detail = 'Server antwortete mit Status ' + response.status;
+                try {
+                    const errorData = await response.json();
+                    if (errorData && errorData.detail) detail = errorData.detail;
+                } catch (ignored) {}
+                throw new Error(detail);
+            }
+            const data = await response.json();
+            if (seq !== imageRequestSeq) return;
+
+            lastRedactedDataUri = 'data:image/png;base64,' + data.sanitized_image_base64;
+            imageRedacted.src = lastRedactedDataUri;
+            imageRedacted.style.display = '';
+            imageRedactedPlaceholder.style.display = 'none';
+
+            drawImageOverlay(data.redactions || [], data.image_width, data.image_height);
+            renderImageMeta(data);
+            renderChipsInto(imageChips, data.mapping || {});
+            renderInto(imageOcrOutput, data.sanitized_text || '', data.mapping || {});
+            if (!data.sanitized_text) {
+                imageOcrOutput.classList.add('is-empty');
+                imageOcrOutput.textContent = 'Kein Text erkannt.';
+            }
+            downloadImageBtn.style.display = 'inline-flex';
+
+            const count = Object.keys(data.mapping || {}).length;
+            const redactionCount = (data.redactions || []).length;
+            if (!data.ocr_text) {
+                showImageStatus('Kein Text erkannt', false, false);
+            } else if (count === 0 && redactionCount === 0) {
+                showImageStatus('Keine sensiblen Daten erkannt', false, false);
+            } else if (count > 0) {
+                showImageStatus(count + (count === 1 ? ' Stelle geschwärzt' : ' Stellen geschwärzt'), false, false);
+            } else {
+                showImageStatus(redactionCount + (redactionCount === 1 ? ' Bereich geschwärzt' : ' Bereiche geschwärzt'), false, false);
+            }
+        } catch (error) {
+            if (seq !== imageRequestSeq) return;
+            showImageStatus('Fehler: ' + error.message, true, false);
+        }
+    }
+
+    function loadImage(file) {
+        if (!file) return;
+        if (!isAllowedImage(file)) {
+            showImageError('Nur PNG, JPEG und WebP werden unterstützt.');
+            return;
+        }
+        const seq = ++imageRequestSeq;
+        clearImageError();
+        if (originalObjectUrl) URL.revokeObjectURL(originalObjectUrl);
+        originalObjectUrl = URL.createObjectURL(file);
+        imageOriginal.onload = function() {
+            if (seq !== imageRequestSeq) return;
+            imagePlaceholder.style.display = 'none';
+            imageOriginal.style.display = '';
+            imageRedacted.style.display = 'none';
+            imageRedactedPlaceholder.style.display = '';
+            imageOverlay.width = imageOriginal.naturalWidth;
+            imageOverlay.height = imageOriginal.naturalHeight;
+            sendImage(file);
+        };
+        imageOriginal.src = originalObjectUrl;
+    }
+
+    function clearImage() {
+        imageRequestSeq++;
+        if (originalObjectUrl) {
+            URL.revokeObjectURL(originalObjectUrl);
+            originalObjectUrl = '';
+        }
+        imageOriginal.removeAttribute('src');
+        imageInput.value = '';
+        clearImageError();
+        hideImageStatus();
+        setImageEmpty();
+    }
+
+    modeTextBtn.addEventListener('click', function() { setMode('text'); });
+    modeImageBtn.addEventListener('click', function() { setMode('image'); });
+
+    loadImageBtn.addEventListener('click', function() {
+        imageInput.click();
+    });
+
+    imageInput.addEventListener('change', function() {
+        loadImage(imageInput.files[0]);
+        imageInput.value = '';
+    });
+
+    clearImageBtn.addEventListener('click', clearImage);
+
+    downloadImageBtn.addEventListener('click', function() {
+        if (!lastRedactedDataUri) return;
+        const link = document.createElement('a');
+        link.href = lastRedactedDataUri;
+        link.download = 'entityguard-redigiert.png';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    });
+
+    ['dragenter', 'dragover'].forEach(function(type) {
+        imageInputPanel.addEventListener(type, function(e) {
+            e.preventDefault();
+            if (type === 'dragenter') imageDragDepth++;
+            imageDropOverlay.classList.add('visible');
+        });
+    });
+
+    imageInputPanel.addEventListener('dragleave', function(e) {
+        e.preventDefault();
+        imageDragDepth = Math.max(0, imageDragDepth - 1);
+        if (imageDragDepth === 0) imageDropOverlay.classList.remove('visible');
+    });
+
+    imageInputPanel.addEventListener('drop', function(e) {
+        e.preventDefault();
+        imageDragDepth = 0;
+        imageDropOverlay.classList.remove('visible');
+        loadImage(e.dataTransfer.files[0]);
+    });
 
     loadFileBtn.addEventListener('click', function() {
         fileInput.click();
@@ -295,6 +633,8 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
     setOutputEmpty();
+    setImageEmpty();
+    setMode('text');
 });
 </script>
 {% endblock %}

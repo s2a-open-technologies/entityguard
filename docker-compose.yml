@@ -3,12 +3,30 @@ services:
     # Tag per ENTITYGUARD_TAG wählbar: latest (torch Standard), latest-cpu (CPU-only, kleiner),
     # X.Y.Z / X.Y.Z-cpu, edge. Lokal bauen: docker compose build
     image: ghcr.io/s2a-open-technologies/entityguard:${ENTITYGUARD_TAG:-latest}
-    build: .
+    build:
+      context: .
+      args:
+        TORCH_VARIANT: ${TORCH_VARIANT:-default}
+        OCR_VARIANT: ${OCR_VARIANT:-cpu}
     container_name: entityguard
     ports:
       - "9500:9500"
     environment:
       - PYTHONUNBUFFERED=1
+      # Headless-Betrieb ohne Admin-UI: API-Schlüssel per Umgebung vorgeben
+      # (mind. 16 Zeichen, mehrere komma-getrennt), z. B. erzeugt mit `openssl rand -hex 32`.
+      # Alternativ ENTITYGUARD_API_KEY_FILE=/run/secrets/<name> (Docker Secret).
+      # - ENTITYGUARD_API_KEY=${ENTITYGUARD_API_KEY}
+      # Admin-Passwort (mind. 8 Zeichen, ersetzt admin/admin, gilt bei jedem Start):
+      # - ENTITYGUARD_ADMIN_PASSWORD=${ENTITYGUARD_ADMIN_PASSWORD}
+      # Transformer-Modelle beim Start: fhswf, openmed_small, openmed_base, openmed_large, none
+      # - ENTITYGUARD_MODELS=openmed_small
+      # Bild-OCR (überschreibt /admin/ocr):
+      # - ENTITYGUARD_OCR_ENGINE=auto
+      # - ENTITYGUARD_OCR_DEVICE=auto
+      # - ENTITYGUARD_OCR_REDACTION=line
+      # Ohne Internet: Modell vorher einmal laden (HF-Cache im Volume), dann offline erzwingen
+      # - HF_HUB_OFFLINE=1
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9500/health"]
       interval: 30s

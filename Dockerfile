@@ -4,6 +4,9 @@ FROM python:3.13-slim
 # TORCH_VARIANT=default -> torch aus PyPI (CUDA-Wheels auf amd64)
 # TORCH_VARIANT=cpu     -> torch CPU-only (deutlich kleineres Image)
 ARG TORCH_VARIANT=default
+# OCR_VARIANT=cpu  -> onnxruntime (CPU)
+# OCR_VARIANT=gpu  -> onnxruntime-gpu (RapidOCR auf CUDA)
+ARG OCR_VARIANT=cpu
 
 # Arbeitsverzeichnis
 WORKDIR /app
@@ -19,6 +22,11 @@ ENV PYTHONUNBUFFERED=1 \
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     curl \
+    tesseract-ocr \
+    tesseract-ocr-deu \
+    tesseract-ocr-eng \
+    libgl1 \
+    libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
 # uv installieren (gepinnt)
@@ -33,6 +41,10 @@ RUN uv sync --frozen --no-dev && \
         uv pip uninstall --python /app/.venv/bin/python \
             $(/app/.venv/bin/python -c "import importlib.metadata as m; print(' '.join(sorted(d.metadata['Name'] for d in m.distributions() if d.metadata['Name'].lower().startswith(('nvidia-', 'triton')))))") \
             2>/dev/null || true; \
+    fi && \
+    if [ "$OCR_VARIANT" = "gpu" ]; then \
+        uv pip uninstall --python /app/.venv/bin/python onnxruntime && \
+        uv pip install --python /app/.venv/bin/python --no-deps onnxruntime-gpu; \
     fi && \
     python -c "import de_core_news_lg, torch; print('spaCy model loaded:', de_core_news_lg.__name__, '| torch', torch.__version__)"
 

@@ -27,9 +27,15 @@ from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from backend.admin import admin_router, get_current_user
-from backend.config import TRACE_ENABLED, TRACE_RETENTION_DAYS
+from backend.components.bert_recognizer import BERT_MODEL_REGISTRY, resolve_model_keys
+from backend.config import (
+    ADMIN_PASSWORD_FROM_ENV, ADMIN_USERNAME_FROM_ENV, MODELS_FROM_ENV,
+    TRACE_ENABLED, TRACE_RETENTION_DAYS,
+)
 from backend.database import SessionLocal
-from backend.database.crud import delete_old_request_traces
+from backend.database.crud import (
+    delete_old_request_traces, ensure_env_admin, log_audit, sync_detector_models,
+)
 from backend.views import entityguard_router
 
 # Logger
@@ -52,6 +58,47 @@ def _cleanup_request_traces() -> None:
         db.close()
 
 
+def _apply_env_admin() -> None:
+    """Create/update the admin account from ENTITYGUARD_ADMIN_PASSWORD (if set)."""
+    if not ADMIN_PASSWORD_FROM_ENV:
+        return
+    db = SessionLocal()
+    try:
+        result = ensure_env_admin(db, ADMIN_USERNAME_FROM_ENV, ADMIN_PASSWORD_FROM_ENV)
+        if result:
+            logger.info(f"Admin account '{ADMIN_USERNAME_FROM_ENV}' {result} from ENTITYGUARD_ADMIN_PASSWORD")
+    except Exception as e:
+        logger.error(f"Applying ENTITYGUARD_ADMIN_PASSWORD failed: {e}")
+    finally:
+        db.close()
+
+
+def _apply_env_models() -> None:
+    """Activate exactly the transformer models listed in ENTITYGUARD_MODELS (if set)."""
+    if MODELS_FROM_ENV is None:
+        return
+    keys, unknown = resolve_model_keys(MODELS_FROM_ENV)
+    if unknown:
+        logger.error(
+            f"ENTITYGUARD_MODELS: unknown model(s) {unknown} ignored "
+            f"(available: {list(BERT_MODEL_REGISTRY)})"
+        )
+    db = SessionLocal()
+    try:
+        changed = sync_detector_models(db, list(BERT_MODEL_REGISTRY), keys)
+        for key in changed:
+            log_audit(
+                db, action="toggle",
+                summary=f"Modell '{key}' per ENTITYGUARD_MODELS {'aktiviert' if key in keys else 'deaktiviert'}",
+                actor_username="ENV", target_type="detector_model", target_label=key,
+            )
+        logger.info(f"Transformer models from ENTITYGUARD_MODELS: {keys or 'none'}")
+    except Exception as e:
+        logger.error(f"Applying ENTITYGUARD_MODELS failed: {e}")
+    finally:
+        db.close()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
@@ -62,6 +109,8 @@ async def lifespan(app: FastAPI):
     """
     # Startup
     logger.info("EntityGuard starting up...")
+    _apply_env_admin()
+    _apply_env_models()
     _cleanup_request_traces()
 
     yield

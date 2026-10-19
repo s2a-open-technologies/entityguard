@@ -28,6 +28,42 @@ flowchart TD
     G --> T["record_trace()<br>nur Metadaten, kein Text"]
 ```
 
+## Bild-Pipeline (`/api/v1/sanitize/image`)
+
+Bilder werden **nur im Speicher** verarbeitet und nie gespeichert. Der
+Ablauf:
+
+```mermaid
+flowchart TD
+    A([Bild als Base64]) --> B["POST /api/v1/sanitize/image"]
+    B --> C{"API-Key gültig?"}
+    C -- Nein --> Z["HTTP 401<br>fail-closed"]
+    C -- Ja --> D["Bild validieren<br>PNG/JPEG/WebP, Größen-/Pixel-Limits, EXIF entfernen"]
+    D --> E["OCR<br>Tesseract (CPU) oder RapidOCR (GPU/CPU)"]
+    E --> F["OCR-Text + Zeilen-/Wortboxen"]
+    F --> G["CustomAnalyzer.analyze_text()"]
+    G --> H["Entitäten auf Boxen abbilden<br>Standard: ganze OCR-Zeile"]
+    H --> I["Boxen schwarz überdecken"]
+    I --> J["PNG → Base64"]
+    J --> K["Antwort: Bild + OCR-Text + mapping + Boxen"]
+```
+
+- **Engine:** `auto` nutzt RapidOCR nur bei verfügbarer CUDA-GPU, sonst
+  Tesseract. Eine angeforderte RapidOCR-GPU ohne CUDA fällt auf Tesseract
+  zurück.
+- **Schwärzung:** `line` (Default) schwärzt die komplette OCR-Zeile eines
+  Treffers, `entity` nur die erkannten Wörter, `all_text` jeden erkannten
+  Text. OCR-Zeilen unter `OCR_MIN_CONFIDENCE` werden zusätzlich konservativ
+  geschwärzt. RapidOCR liefert Zeilenboxen; `entity` schwärzt dort daher
+  ebenfalls die ganze Zeile.
+- **Kein Mapping-Speicher:** Das `mapping` gehört zum maskierten OCR-Text und
+  wird wie beim Text-Endpoint nur in der Antwort zurückgegeben. Für das Bild
+  gibt es keine De-Anonymisierung; das redigierte PNG ist das Endergebnis.
+- **Grenzen:** OCR erfasst nur gedruckten Text. Handschrift, Gesichter, Logos,
+  Diagramme und schlechte Scans bleiben unerkannt. `ENTITYGUARD_OCR_VERIFY`
+  kann das redigierte Bild erneut prüfen und bei Rest-Treffern fail-closed
+  abbrechen.
+
 ## Erkennungsquellen
 
 | Quelle | Erkennt | Code |
@@ -52,7 +88,13 @@ Wodurch eine Entität tatsächlich erkannt wird, zeigt das Admin-UI pro Entität
 
 - **Eindeutige Tokens pro Vorkommen**: Platzhalter werden durchnummeriert
   (`[PERSON_1]`, `[PERSON_2]`, …), nicht nur pro Kategorie. Damit kollidieren
-  mehrere Vorkommen derselben Entität nicht im `mapping`-Dict.
+  mehrere Vorkommen derselben Entität nicht im `mapping`-Dict. Gezählt wird je
+  **Platzhalter** (nicht je Entitätstyp): Typen, die sich einen Platzhalter
+  teilen (z. B. IBAN und der Fallback `[SENSITIV]`), laufen in einer Zählung.
+- **Optional: gleicher Wert, gleicher Platzhalter**: Mit
+  `"reuse_placeholders": true` im Request bekommt ein identischer Wert (exakt
+  gleicher Text, gleicher Platzhalter) überall denselben Token; das `mapping`
+  hat einen Eintrag je Wert. Gedacht für ganze Gespräche in einem Aufruf.
 - **Platzhalter kommen aus der `entities`-Tabelle**: Ist eine Entität inaktiv
   oder hat keine DB-Zeile, werden ihre Treffer verworfen (kein Platzhalter).
   Der Fallback `[SENSITIV]` greift nur, wenn ein erkannter Typ keine Zeile hat.

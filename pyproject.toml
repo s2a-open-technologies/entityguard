@@ -21,6 +21,10 @@ dependencies = [
     "de_core_news_lg @ https://github.com/explosion/spacy-models/releases/download/de_core_news_lg-3.8.0/de_core_news_lg-3.8.0-py3-none-any.whl",
     "transformers>=4.57.6",
     "torch>=2.13.0",
+    "pillow>=11.0.0",
+    "pytesseract>=0.3.13",
+    "rapidocr>=3.2.0",
+    "onnxruntime>=1.20.0",
 ]
 
 [project.optional-dependencies]

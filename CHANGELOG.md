@@ -12,6 +12,74 @@ section as the GitHub Release notes.
 
 ## [Unreleased]
 
+### Added
+
+- Bild-Redaktion: `POST /api/v1/sanitize/image` liest Text per OCR (Tesseract oder RapidOCR),
+  nutzt dieselbe Entitätserkennung wie Text und liefert ein redigiertes PNG (Base64) plus
+  OCR-Text, `mapping` und Boxen. Standard ist zeilenweises Schwärzen; `entity` und `all_text`
+  sind wählbar. Bilder werden nur im Speicher verarbeitet, nie gespeichert; bei Fehlern wird
+  kein Originalbild zurückgegeben (fail-closed).
+- Admin-Seite **Bild-OCR** (`/admin/ocr`) und `app_settings` (Migration `020`): Engine
+  (`auto`/`tesseract`/`rapidocr`), Gerät (`auto`/`cpu`/`cuda`), Sprache, Schwärzungsmodus,
+  Konfidenz, Verifikation, Größen-/Pixel-Limits und Timeout. `ENTITYGUARD_OCR_*`- und
+  `ENTITYGUARD_IMAGE_*`-Umgebungsvariablen überschreiben die Admin-Werte für Headless-Container.
+- Admin-Testseite `/admin/sanitize` mit Text-/Bild-Modus: links Original mit roten Markierungen,
+  rechts das redigierte PNG, darunter maskierter OCR-Text, Engine/Gerät/Konfidenz und Maskenzahl.
+- OpenWebUI-Filter behandelt Bildteile (`image_url`/`input_image`): `image_mode=block`
+  (Default, fail-closed) oder `image_mode=redact` (OCR + Schwärzung). Externe Bild-URLs werden
+  nicht abgerufen. Fertiger Filter inkl. Kurzanleitung unter
+  `integrations/openwebui/entityguard_filter.py` und `integrations/openwebui/README.md`.
+- `backend/components/ocr.py` und `backend/components/image_sanitizer.py` mit Tests für
+  Engine-Fallback, OCR-Normalisierung, Span→Box-Mapping, Limits und Fail-Closed.
+- `reuse_placeholders` (Request-Feld von `POST /api/v1/sanitize`, Standard `false`): Identische
+  Werte bekommen im ganzen Text denselben Platzhalter (`[NAME_1]` für jedes „Max Mustermann“),
+  das `mapping` hat einen Eintrag je Wert. Gedacht für Aufrufer, die ein ganzes Gespräch in einem
+  Aufruf schicken. Ohne das Feld bleibt alles wie bisher.
+- OpenWebUI-Filter „Ganzer Kontext in einem Aufruf“ (`docs/OpenWebUI.md`): maskiert System-Prompt,
+  Verlauf und neue Frage gemeinsam und übersetzt die Antwort zurück; ersetzt die Einschränkung
+  „nur die aktuelle Anfrage“ der einfachen Filter.
+- Erste Tests (`tests/`): Platzhalter-Logik ohne spaCy, API mit Fake-Analyzer.
+- API-Schlüssel per Umgebungsvariable `ENTITYGUARD_API_KEY` (mehrere komma-getrennt) oder
+  `ENTITYGUARD_API_KEY_FILE` (Docker Secret) für den Headless-Betrieb ohne Admin-UI. Gilt
+  zusätzlich zu den DB-Schlüsseln, wird nicht gespeichert, in konstanter Zeit verglichen und im
+  Trace nur als Präfix `env` geführt; Schlüssel unter 16 Zeichen werden ignoriert. Die Seite
+  **API-Schlüssel** zeigt, wie viele Env-Schlüssel aktiv sind. Ohne DB- und Env-Schlüssel bleibt
+  die API geschlossen (HTTP 401).
+- Admin-Passwort per `ENTITYGUARD_ADMIN_PASSWORD` (oder `_FILE`, optional
+  `ENTITYGUARD_ADMIN_USERNAME`, Standard `admin`): Beim Start wird das Konto angelegt bzw. als
+  aktiver Admin mit diesem Passwort gesetzt, sodass headless kein `admin`/`admin` übrig bleibt.
+  Die Umgebung ist maßgeblich (UI-Änderungen werden beim Neustart überschrieben); Änderungen
+  landen im Audit-Log mit Akteur `ENV`.
+- Transformer-Modelle per `ENTITYGUARD_MODELS` beim Start aktivieren (`fhswf`, `openmed_small`,
+  `openmed_base`, `openmed_large` oder voller Registry-Name, komma-getrennt; `none` = alle aus).
+  Genau die genannten Modelle werden eingeschaltet, alle anderen aus; unbekannte Namen werden
+  geloggt und ignoriert. Die Seite **Modelle** weist darauf hin.
+- `.github/workflows/ghcr-cleanup.yml`: wöchentliches Aufräumen verwaister
+  `sha256:…`-Versionen im GHCR-Paket (Multi-Arch-fähig, getaggte Images samt
+  Plattform-Images und Attestations bleiben erhalten). Manuell mit Dry-Run
+  startbar.
+
+### Fixed
+
+- **Mapping-Kollision bei gemeinsamem Platzhalter**: Teilen sich zwei Entitätstypen einen Platzhalter
+  (z. B. IBAN und der Fallback `[SENSITIV]`), wurde je Typ gezählt und es entstand zweimal
+  `[SENSITIV_1]`; der zweite Eintrag überschrieb den ersten im `mapping`, die De-Anonymisierung setzte
+  den falschen Wert ein. Es wird jetzt je Platzhalter gezählt.
+- **`/api/v1/sanitize`, `/api/v1/reload` und `/admin/sanitize/api` blockierten den Server**: Die
+  CPU-gebundene Analyse lief als `async def` im Event-Loop und hielt währenddessen alle anderen
+  Anfragen an, auch `/health` (Docker-Healthcheck). Die Endpunkte laufen jetzt im Threadpool; die
+  Erzeugung des Analyzers ist per Lock gegen doppelte Modellladung bei gleichzeitigen ersten
+  Anfragen geschützt.
+
+### Changed
+
+- Neue Laufzeit-Abhängigkeiten `Pillow`, `pytesseract`, `rapidocr` und `onnxruntime`; das
+  Dockerfile installiert `tesseract-ocr` samt `deu`/`eng`. Build-Arg `OCR_VARIANT=gpu` tauscht
+  `onnxruntime` gegen `onnxruntime-gpu` für RapidOCR auf CUDA.
+- Dokumentiert, dass Trennmarken zwischen mehreren Texten **keine Buchstaben** enthalten sollten:
+  Die deutsche spaCy-NER hat `=====MSG-1=====` teilweise als Entität erkannt (`MSG-1=====`) und die
+  Marke zerstört, `=====#1=====` übersteht die Erkennung (gemessen mit `de_core_news_lg`).
+
 ## [1.1.1] — 2026-10-06
 
 ### Added

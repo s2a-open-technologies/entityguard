@@ -23,10 +23,31 @@ import bcrypt
 from sqlalchemy.orm import Session
 
 from .models import (
-    AdminUser, AllowedValueModel, ApiKeyModel, AuditLogModel,
+    AdminUser, AllowedValueModel, ApiKeyModel, AppSettingModel, AuditLogModel,
     ContextWordModel, DetectorModel, EntityModel, PatternModel,
     RequestTraceModel,
 )
+
+
+# ============================================================================
+# App settings (admin-editable runtime configuration)
+# ============================================================================
+
+def get_app_settings(db: Session) -> dict[str, str]:
+    """Return all persisted app settings as a key -> value mapping."""
+    return {row.key: row.value for row in db.query(AppSettingModel).all()}
+
+
+def set_app_settings(db: Session, values: dict[str, str]) -> None:
+    """Create or update several app settings in one transaction."""
+    for key, value in values.items():
+        row = db.get(AppSettingModel, key)
+        if row is None:
+            db.add(AppSettingModel(key=key, value=value))
+        else:
+            row.value = value
+            row.updated_at = datetime.utcnow()
+    db.commit()
 
 
 # ============================================================================
@@ -55,6 +76,22 @@ def set_detector_model_active(db: Session, name: str, is_active: bool) -> Option
     db.commit()
     db.refresh(row)
     return row
+
+
+def sync_detector_models(db: Session, all_keys: list[str], active_keys: list[str]) -> list[str]:
+    """
+    Set exactly ``active_keys`` active and every other key in ``all_keys``
+    inactive (ENTITYGUARD_MODELS at startup). Returns the keys whose state
+    actually changed, so callers only audit real changes.
+    """
+    changed = []
+    for key in all_keys:
+        row = get_detector_model_by_name(db, key)
+        want = key in active_keys
+        if bool(row.is_active if row else False) != want:
+            set_detector_model_active(db, key, want)
+            changed.append(key)
+    return changed
 
 
 # ============================================================================
@@ -254,6 +291,46 @@ def update_admin_password(db: Session, user_id: int, new_password: str) -> Optio
     db.commit()
     db.refresh(user)
     return user
+
+
+def ensure_env_admin(db: Session, username: str, password: str) -> Optional[str]:
+    """
+    Make sure ``username`` exists as an active admin with ``password``.
+
+    Used at startup for ENTITYGUARD_ADMIN_PASSWORD: the environment is the
+    source of truth, so a password changed in the UI is reset on the next
+    start. Nothing is written when the account already matches.
+
+    Returns:
+        Optional[str]: "created", "updated" or None (already in sync).
+    """
+    user = get_admin_user_by_username(db, username)
+    if not user:
+        user = create_admin_user(db, username, password, role="admin")
+        user.last_password_change = datetime.utcnow()
+        db.commit()
+        result = "created"
+    else:
+        password_ok = verify_password(password, user.password_hash)
+        if password_ok and user.is_active and user.role == "admin":
+            return None
+        if not password_ok:
+            user.password_hash = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+            user.last_password_change = datetime.utcnow()
+        user.is_active = True
+        user.role = "admin"
+        db.commit()
+        result = "updated"
+
+    log_audit(
+        db,
+        action="create" if result == "created" else "password_change",
+        summary=f"Admin-Konto '{username}' per ENTITYGUARD_ADMIN_PASSWORD "
+                f"{'angelegt' if result == 'created' else 'gesetzt'}",
+        actor_username="ENV",
+        target_type="admin_user", target_id=user.id, target_label=username,
+    )
+    return result
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:

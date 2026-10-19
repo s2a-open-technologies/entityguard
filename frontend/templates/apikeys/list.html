@@ -15,6 +15,15 @@
     eingesehen werden – geht er verloren, einen neuen anlegen.
 </p>
 
+{% if env_key_count %}
+<div class="alert alert-success">
+    <p><strong>{{ env_key_count }} API-Schlüssel per Umgebungsvariable aktiv</strong>
+    (<code>ENTITYGUARD_API_KEY</code> bzw. <code>ENTITYGUARD_API_KEY_FILE</code>).
+    Diese Schlüssel gelten zusätzlich zu den Schlüsseln unten, werden nicht gespeichert und lassen
+    sich hier weder einsehen noch deaktivieren – zum Ändern die Variable anpassen und den Dienst neu starten.</p>
+</div>
+{% endif %}
+
 {% if new_api_key %}
 <div class="alert alert-success">
     <p><strong>Neuer API-Schlüssel erzeugt.</strong> Jetzt kopieren – er wird nicht erneut angezeigt:</p>

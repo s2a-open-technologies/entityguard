@@ -13,7 +13,7 @@
 |---|---|---|---|
 | Passwort-Hashing (Admin/Viewer) | ✅ | `admin_users.password_hash`, bcrypt (`backend/database/crud.py`) | Salt automatisch pro Passwort |
 | API-Keys nie im Klartext gespeichert | ✅ | `api_keys.key_hash`, bcrypt (`backend/security.py::generate_api_key`) | Klartext wird nur einmalig beim Erzeugen angezeigt |
-| API fail-closed ohne Key | ✅ | `backend/security.py::require_api_key` — keine aktiven Keys ⇒ HTTP 401 | Kein Env-Fallback |
+| API fail-closed ohne Key | ✅ | `backend/security.py::require_api_key` — keine aktiven DB-Keys und kein `ENTITYGUARD_API_KEY` ⇒ HTTP 401 | Env-Keys optional für Headless-Betrieb (mind. 16 Zeichen, Vergleich in konstanter Zeit, nicht gespeichert) |
 | RBAC mit Rollen | ✅ | `admin_users.role` (`admin`/`viewer`), `require_admin` (`backend/admin/auth.py`) | Viewer erhalten 403 auf mutierenden Routen; UI blendet Buttons aus |
 | Mutierende Routen admin-only | ✅ | alle `POST`-Routen in `backend/admin/routes.py` hängen an `require_admin` | Lesen + Sanitize-Seite: `require_auth` |
 | Admin-Sanitize-Seite hinter Login | ✅ | `GET /admin/sanitize`, `Depends(require_auth)`; Redirect auf Login | Öffentliche Variante entfernt |
@@ -43,6 +43,8 @@
 | Art.-32-Maßnahmentabelle | ✅ | `SECURITY.md` „Technical Measures (Article 32)" | Ehrlich mit ⚠️ markiert |
 | PII-Maskierung vor LLM | ✅ | Kernzweck; [`docs/pii.md`](pii.md) | Maskierter Text geht ans LLM, `mapping` nur an den Aufrufer |
 | Speicherung von Patientendaten | ✅ (minimiert) | Text/Mapping nur flüchtig im Speicher | Durchlauf-Schicht, kein Datenspeicher für Klartext |
+| Bildverarbeitung ohne Persistenz | ✅ | `/api/v1/sanitize/image`, `backend/components/image_sanitizer.py` | Bild/OCR-Text/Boxen nur im Speicher; redigiertes PNG wird nicht gespeichert |
+| Bild-Redaktion fail-closed | ✅ | `ImageSanitizerError`, 400/413/415/500/503/504 | Originalbild wird bei Fehlern nicht zurückgegeben; `OCR_VERIFY` optional |
 | Datenminimierung im Trace | ✅ | nur Metadaten, kein Text/Mapping | `backend/tracing.py` |
 | Aufbewahrungsfristen (Trace) | ✅ | `TRACE_RETENTION_DAYS`, Cleanup beim Start | Default 7 Tage |
 | Aufbewahrungsfristen (Audit) | ⚠️ | Audit-Log ohne automatisches Ablaufdatum (bewusst) | Enthält keine Patientendaten; manuelle Löschung möglich |

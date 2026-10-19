@@ -29,6 +29,7 @@ from backend.components.bert_recognizer import (
     BertNerRecognizer,
     resolve_registry_entry,
 )
+from backend.components.placeholders import apply_matches
 from backend.database.crud import get_allowed_values, get_detector_models, get_entities
 from backend.database.models import DetectorModel
 
@@ -97,26 +98,6 @@ def _get_bert_recognizers(db: Optional[Session]) -> List[BertNerRecognizer]:
         recognizers.append(_bert_recognizers[key])
 
     return recognizers
-
-
-def _index_placeholder(base_placeholder: str, index: int) -> str:
-    """
-    Turn a static placeholder into a unique, indexed one.
-
-    Inserts the index before the closing bracket if present
-    (e.g. "[EMAIL]" -> "[EMAIL_1]"), otherwise appends it as a suffix
-    (e.g. "EMAIL" -> "EMAIL_1").
-
-    Args:
-        base_placeholder (str): The static placeholder (e.g. "[EMAIL]").
-        index (int): The 1-based occurrence index.
-
-    Returns:
-        str: The indexed placeholder.
-    """
-    if base_placeholder.endswith("]"):
-        return f"{base_placeholder[:-1]}_{index}]"
-    return f"{base_placeholder}_{index}"
 
 
 class DatabasePatternProvider:
@@ -327,30 +308,20 @@ class CustomAnalyzer:
         return len(recognizers)
             
 
-    def process_text(self, text: str, db: Optional[Session] = None) -> tuple[str, dict[str, str]]:
+    def analyze_text(
+        self,
+        text: str,
+        db: Optional[Session] = None,
+    ):
         """
-        Analyze and anonymize sensitive entities in the given text.
+        Analyze text and return the raw Presidio results plus placeholders.
 
-        This method identifies sensitive entities and replaces each occurrence
-        with a unique, indexed placeholder loaded from the database (e.g.
-        "[EMAIL_1]", "[EMAIL_2]"), so that multiple entities of the same type
-        can be told apart. A mapping of placeholder to original value is
-        returned alongside the anonymized text to allow de-anonymization.
-
-        Args:
-            text (str): The input text to be anonymized.
-            db (Optional[Session]): Database session for loading entity placeholders.
-
-        Returns:
-            tuple[str, dict[str, str]]: The anonymized text with sensitive
-                entities replaced by unique masked placeholders, and a mapping
-                of placeholder to original value. Returns ("", {}) for
-                whitespace-only input.
+        Used by the image sanitizer, which needs the entity spans to map
+        them onto OCR bounding boxes.
         """
         if not text.strip():
-            return "", {}
+            return [], {}
 
-        # Get all active entities from database
         db_session = db or self._db
         entity_placeholders = {}
         active_entities = []
@@ -364,8 +335,6 @@ class CustomAnalyzer:
             except Exception as e:
                 logger.warning(f"Could not load entity placeholders from DB: {e}")
 
-        # Exact-match strings that should never be masked, regardless of
-        # which recognizer flagged them (spaCy, BERT, or a custom pattern).
         allow_list: List[str] = []
         if db_session:
             try:
@@ -373,40 +342,49 @@ class CustomAnalyzer:
             except Exception as e:
                 logger.warning(f"Could not load allow-list from DB: {e}")
 
-        # Analyze text - only for active entities from DB
-        # If no entities are active, only built-in recognizers that match active entities
         results = self.analyzer.analyze(
             text=text,
             language=self.language,
             entities=active_entities if active_entities else None,
             allow_list=allow_list if allow_list else None
         )
+        return results, entity_placeholders
 
-        # Replace each match with a unique, indexed placeholder (e.g.
-        # "[EMAIL_1]", "[EMAIL_2]") and record the original value in
-        # `mapping`, so the same entity type can appear more than once in a
-        # text without becoming ambiguous. Matches are applied left-to-right;
-        # a match that overlaps one already placed is skipped.
-        mapping: dict[str, str] = {}
-        counters: dict[str, int] = {}
-        output_parts: List[str] = []
-        last_end = 0
+    def process_text(
+        self,
+        text: str,
+        db: Optional[Session] = None,
+        reuse_placeholders: bool = False,
+    ) -> tuple[str, dict[str, str]]:
+        """
+        Analyze and anonymize sensitive entities in the given text.
 
-        sorted_results = sorted(results, key=lambda r: (r.start, r.start - r.end))
-        for result in sorted_results:
-            if result.start < last_end:
-                continue
+        This method identifies sensitive entities and replaces each occurrence
+        with a unique, indexed placeholder loaded from the database (e.g.
+        "[EMAIL_1]", "[EMAIL_2]"), so that multiple entities of the same type
+        can be told apart. A mapping of placeholder to original value is
+        returned alongside the anonymized text to allow de-anonymization.
 
-            base_placeholder = entity_placeholders.get(result.entity_type, "[SENSITIV]")
-            counters[result.entity_type] = counters.get(result.entity_type, 0) + 1
-            indexed_placeholder = _index_placeholder(base_placeholder, counters[result.entity_type])
-            mapping[indexed_placeholder] = text[result.start:result.end]
+        Args:
+            text (str): The input text to be anonymized.
+            db (Optional[Session]): Database session for loading entity placeholders.
+            reuse_placeholders (bool): Give identical values of the same entity
+                type the same placeholder (see ``apply_matches``). Default False.
 
-            output_parts.append(text[last_end:result.start])
-            output_parts.append(indexed_placeholder)
-            last_end = result.end
+        Returns:
+            tuple[str, dict[str, str]]: The anonymized text with sensitive
+                entities replaced by unique masked placeholders, and a mapping
+                of placeholder to original value. Returns ("", {}) for
+                whitespace-only input.
+        """
+        if not text.strip():
+            return "", {}
 
-        output_parts.append(text[last_end:])
+        results, entity_placeholders = self.analyze_text(text, db)
 
-        return "".join(output_parts), mapping
+        # Replace each match with an indexed placeholder (e.g. "[EMAIL_1]",
+        # "[EMAIL_2]") and record the original value in `mapping`; see
+        # `apply_matches` for the rules (left-to-right, overlaps skipped,
+        # text between matches unchanged, optional placeholder reuse).
+        return apply_matches(text, results, entity_placeholders, reuse_placeholders)
     

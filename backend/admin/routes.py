@@ -26,15 +26,27 @@ from pathlib import Path
 from typing import Annotated
 from urllib.parse import urlencode
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Request
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
 from backend.components.bert_recognizer import BERT_MODEL_REGISTRY, gpu_available
 from backend.components.cstm_analyzer import CustomAnalyzer
+from backend.components.image_sanitizer import (
+    ImageSanitizerError,
+    sanitize_image_bytes,
+)
+from backend.components.ocr import available_engines, clear_ocr_cache
+from backend.ocr_settings import (
+    DEFAULTS as OCR_DEFAULTS,
+    ENV_NAMES as OCR_ENV_NAMES,
+    get_ocr_settings,
+    save_ocr_settings,
+    settings_for_admin,
+)
 from backend.assets import asset_url
-from backend.config import TRACE_ENABLED, TRACE_RETENTION_DAYS
+from backend.config import API_KEYS_FROM_ENV, MODELS_FROM_ENV, TRACE_ENABLED, TRACE_RETENTION_DAYS
 from backend.database import SessionLocal
 from backend.database.crud import (
     count_active_admins, count_audit_logs, count_request_traces,
@@ -490,6 +502,7 @@ async def list_api_keys(request: Request, user: dict = Depends(require_auth)):
         context = get_template_context(
             request,
             api_keys=api_keys,
+            env_key_count=len(API_KEYS_FROM_ENV),
             new_api_key=request.query_params.get("new_key"),
         )
         return templates.TemplateResponse("apikeys/list.html", context)
@@ -511,6 +524,7 @@ async def create_api_key_submit(
             context = get_template_context(
                 request,
                 api_keys=get_api_keys(db),
+                env_key_count=len(API_KEYS_FROM_ENV),
                 error="Eine Bezeichnung ist erforderlich",
             )
             return templates.TemplateResponse("apikeys/list.html", context, status_code=400)
@@ -596,7 +610,7 @@ async def sanitize_page(request: Request, user: dict = Depends(require_auth)):
 
 
 @admin_router.post("/sanitize/api")
-async def sanitize_api(
+def sanitize_api(
     request: Request,
     payload: SanitizePageRequest,
     user: dict = Depends(require_auth)
@@ -608,6 +622,9 @@ async def sanitize_api(
     exposing a key to the browser. Deliberately not traced: this page fires
     one request per typing pause (live preview), which would flood the trace
     log - only real API calls are recorded.
+
+    A plain ``def`` so the blocking analysis runs in the threadpool instead of
+    freezing the event loop on every keystroke pause.
     """
     import backend.views.anonymizer as anonymizer_module
 
@@ -621,6 +638,133 @@ async def sanitize_api(
             status_code=500,
             detail="Security abort: Data sanitization failed"
         )
+
+
+@admin_router.post("/sanitize/api/image")
+def sanitize_image_api(
+    request: Request,
+    file: UploadFile = File(...),
+    user: dict = Depends(require_auth)
+):
+    """Sanitize an uploaded image for the admin UI.
+
+    Session-authenticated proxy, same-origin, no API key exposed to the
+    browser. Returns the redacted PNG as base64 plus the OCR text, boxes and
+    metadata used by the preview. Not traced (live preview page).
+    """
+    import backend.views.anonymizer as anonymizer_module
+
+    db = SessionLocal()
+    try:
+        settings = get_ocr_settings(db)
+    finally:
+        db.close()
+
+    if not settings.enabled:
+        raise HTTPException(status_code=404, detail="Bildverarbeitung ist deaktiviert")
+
+    try:
+        if file.size is not None and file.size > settings.max_bytes:
+            raise HTTPException(status_code=413, detail="Bild ist zu groß")
+        data = file.file.read()
+        result = sanitize_image_bytes(
+            data,
+            anonymizer_module._get_or_create_analyzer(),
+            settings,
+            reuse_placeholders=True,
+        )
+        return {
+            "sanitized_image_base64": result.sanitized_image_base64,
+            "sanitized_text": result.sanitized_text,
+            "ocr_text": result.ocr_text,
+            "mapping": result.mapping,
+            "ocr_engine": result.ocr_engine,
+            "ocr_device": result.ocr_device,
+            "ocr_confidence": result.ocr_confidence,
+            "latency_ms": result.latency_ms,
+            "image_width": result.image_width,
+            "image_height": result.image_height,
+            "redactions": result.redactions,
+            "entities": result.entities,
+            "warnings": result.warnings,
+        }
+    except HTTPException:
+        raise
+    except ImageSanitizerError as e:
+        logger.error("Admin image sanitization failed: %s", e)
+        raise HTTPException(status_code=e.status_code, detail=e.public_message)
+    except Exception as e:
+        logger.error("Error in admin image sanitization: %s", e)
+        raise HTTPException(status_code=500, detail="Security abort: Image sanitization failed")
+
+
+# ============================================================================
+# OCR / image settings
+# ============================================================================
+
+@admin_router.get("/ocr", response_class=HTMLResponse)
+async def ocr_settings_page(request: Request, user: dict = Depends(require_auth)):
+    """Render the image/OCR settings page."""
+    db = SessionLocal()
+    try:
+        values, env_overrides = settings_for_admin(db)
+        settings = get_ocr_settings(db)
+        context = get_template_context(
+            request,
+            values=values,
+            env_names=OCR_ENV_NAMES,
+            env_overrides=env_overrides,
+            settings=settings,
+            engines=available_engines(settings),
+            defaults=OCR_DEFAULTS,
+        )
+        return templates.TemplateResponse("ocr/settings.html", context)
+    finally:
+        db.close()
+
+
+@admin_router.post("/ocr")
+async def update_ocr_settings(request: Request, user: dict = Depends(require_admin)):
+    """Persist OCR settings from the admin form (env vars still win)."""
+    form = await request.form()
+    values = {
+        key: (
+            "true" if form.get(key) in ("true", "on", "1") else "false"
+            if key in ("ocr_enabled", "ocr_verify")
+            else str(form.get(key, ""))
+        )
+        for key in OCR_DEFAULTS
+    }
+
+    db = SessionLocal()
+    try:
+        try:
+            save_ocr_settings(db, values)
+        except ValueError as exc:
+            _, env_overrides = settings_for_admin(db)
+            settings = get_ocr_settings(db)
+            context = get_template_context(
+                request,
+                values=values,
+                env_names=OCR_ENV_NAMES,
+                env_overrides=env_overrides,
+                settings=settings,
+                engines=available_engines(settings),
+                defaults=OCR_DEFAULTS,
+                error=str(exc),
+            )
+            return templates.TemplateResponse("ocr/settings.html", context, status_code=400)
+
+        clear_ocr_cache()
+        log_audit(
+            db, action="update", summary="OCR-/Bildeinstellungen aktualisiert",
+            actor_id=user["id"], actor_username=user["username"],
+            target_type="ocr_settings", target_label="ocr",
+            ip_address=_client_ip(request),
+        )
+        return RedirectResponse(url="/admin/ocr", status_code=303)
+    finally:
+        db.close()
 
 
 # ============================================================================
@@ -1062,7 +1206,9 @@ async def list_models(request: Request, user: dict = Depends(require_auth)):
                 "entities": ", ".join(sorted(set(entry["mapping"].values()))),
                 "gpu_recommended": bool(entry.get("gpu_recommended")),
             })
-        context = get_template_context(request, models=models, gpu_available=gpu_available())
+        context = get_template_context(
+            request, models=models, gpu_available=gpu_available(), env_models=MODELS_FROM_ENV,
+        )
         return templates.TemplateResponse("models/list.html", context)
     finally:
         db.close()

@@ -272,6 +272,30 @@ class AuditLogModel(Base):
     ip_address: Mapped[str | None] = mapped_column(String(45), nullable=True)
 
 
+class AppSettingModel(Base):
+    """
+    Persistent key/value settings editable in the admin UI.
+
+    Used for runtime configuration that should survive restarts without a
+    migration (currently the image/OCR settings). Environment variables can
+    override individual keys for headless deployments; the override is
+    resolved in ``backend/ocr_settings.py`` and never written to this table.
+
+    Attributes:
+        key: Unique setting key (e.g. "ocr_engine")
+        value: String value; typed parsing happens in the settings module
+        updated_at: Timestamp of the last change
+    """
+    __tablename__ = "app_settings"
+
+    key: Mapped[str] = mapped_column(String(100), primary_key=True)
+    value: Mapped[str] = mapped_column(Text, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def __repr__(self) -> str:
+        return f"<AppSettingModel(key='{self.key}', value='{self.value}')>"
+
+
 class RequestTraceModel(Base):
     """
     Tracing-lite row for a single sanitize request.

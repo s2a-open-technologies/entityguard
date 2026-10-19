@@ -61,6 +61,11 @@ The admin UI under `/admin/*` uses server-side sessions:
   **403** for viewers. All mutating routes use `require_admin`.
 - The default account `admin` / `admin` is created by migration `004` and
   **must be changed immediately** in production.
+- Headless deployments can set `ENTITYGUARD_ADMIN_PASSWORD` (or `_FILE`, min.
+  8 characters; user name via `ENTITYGUARD_ADMIN_USERNAME`, default `admin`).
+  On every start the account is created or reset to an active admin with that
+  password (bcrypt, `crud.ensure_env_admin`), audited with actor `ENV`. The
+  environment wins: a password changed in the UI is reset on the next restart.
 
 ### JSON API — API keys
 
@@ -72,7 +77,14 @@ The admin UI under `/admin/*` uses server-side sessions:
   and a display `key_prefix` are stored. The plaintext is shown **once** at
   creation and cannot be recovered.
 - Only **active** keys count. With **no active key configured, every request
-  is rejected with HTTP 401** (fail-closed). There is no environment fallback.
+  is rejected with HTTP 401** (fail-closed).
+- For headless deployments, additional keys can be supplied via
+  `ENTITYGUARD_API_KEY` (comma-separated) or `ENTITYGUARD_API_KEY_FILE`
+  (Docker secret). They are compared in constant time (`hmac.compare_digest`),
+  never written to the database, require at least 16 characters (shorter
+  values are ignored) and show up in traces only as key prefix `env`. They
+  cannot be deactivated in the UI - rotate by changing the variable and
+  restarting. The API stays fail-closed if neither DB nor env keys exist.
 - `/health` stays open (health checks).
 
 ### CSRF
@@ -188,11 +200,12 @@ Required Apache modules: `a2enmod proxy proxy_http ssl headers`.
 ## Pre-Deployment
 
 - [ ] Admin password changed from the default `admin`/`admin`
-- [ ] At least one **active API key** created under `/admin/api-keys` (otherwise the API is closed)
+- [ ] At least one **active API key** created under `/admin/api-keys` or set via `ENTITYGUARD_API_KEY`/`_FILE` (otherwise the API is closed); env keys are random (`openssl rand -hex 32`) and not committed
 - [ ] Only necessary accounts exist; roles reviewed (`/admin/users`)
 - [ ] HTTPS terminated at the reverse proxy (cleartext patient data is in the request body)
 - [ ] `TRACE_HMAC_SECRET` set if input correlation is required; otherwise tracing stays metadata-only
 - [ ] `TRACE_RETENTION_DAYS` matches your retention policy
+- [ ] Bild-OCR-Policy festgelegt: `image_mode=block` im OpenWebUI-Filter, sofern Bild-Redaktion nicht ausdrücklich gewünscht ist; `/admin/ocr` bzw. `ENTITYGUARD_OCR_*` geprüft
 - [ ] Docker container hardened (non-root user, dropped capabilities)
 - [ ] Filesystem permissions on `data/entityguard.db` restrict access to the service account
 
@@ -224,7 +237,7 @@ Required Apache modules: `a2enmod proxy proxy_http ssl headers`.
 
 | Measure | Implementation | Status |
 |---------|---------------|--------|
-| Data minimization | Text and `mapping` are never persisted; traces are metadata-only | ✅ |
+| Data minimization | Text, images, OCR text and `mapping` are never persisted; traces are metadata-only | ✅ |
 | Pseudonymization before the LLM | Masking is the core function; the LLM sees only masked text | ✅ |
 | Access control | Session auth + roles; API keys (bcrypt, fail-closed) | ✅ |
 | Audit trail | Append-only `audit_log` incl. failed logins | ✅ |

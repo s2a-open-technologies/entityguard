@@ -155,6 +155,37 @@ def resolve_registry_entry(model_name: Optional[str] = None) -> tuple[str, Dict[
     )
 
 
+def resolve_model_keys(raw: str) -> tuple[list[str], list[str]]:
+    """
+    Resolve a comma-separated ENTITYGUARD_MODELS value to registry keys.
+
+    Each entry may be the full registry key (``transformer_pii_openmed_small``)
+    or its short form without the ``transformer_``/``transformer_pii_``/
+    ``transformer_ner_`` prefix (``openmed_small``, ``fhswf``). ``none``
+    (or an empty value) selects no model.
+
+    Returns:
+        tuple[list[str], list[str]]: (resolved keys in registry order,
+            entries that matched no model).
+    """
+    keys: set[str] = set()
+    unknown: list[str] = []
+    for item in (v.strip().lower() for v in raw.split(",")):
+        if not item or item == "none":
+            continue
+        match = next(
+            (k for k in BERT_MODEL_REGISTRY
+             if item in (k, k.removeprefix("transformer_"),
+                         k.removeprefix("transformer_pii_"), k.removeprefix("transformer_ner_"))),
+            None,
+        )
+        if match:
+            keys.add(match)
+        else:
+            unknown.append(item)
+    return [k for k in BERT_MODEL_REGISTRY if k in keys], unknown
+
+
 class BertNerRecognizer(EntityRecognizer):
     """
     Presidio EntityRecognizer backed by a transformer NER/PII model (native

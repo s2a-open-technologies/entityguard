@@ -23,6 +23,14 @@
     {% endif %}
 </div>
 
+{% if env_models is not none %}
+<div class="alert alert-success">
+    Die Modellauswahl wird per Umgebungsvariable <code>ENTITYGUARD_MODELS</code> vorgegeben
+    (<code>{{ env_models or 'leer' }}</code>). Schalter hier wirken sofort, werden beim nächsten Neustart aber
+    wieder auf diesen Wert zurückgesetzt.
+</div>
+{% endif %}
+
 <div class="stats-grid models-grid">
     {% for model in models %}
     <div class="model-card stat-card">

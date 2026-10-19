@@ -9,7 +9,12 @@ Eingabe:  "Patient Max Mustermann, geb. 15.03.1980, behandelt in der Charité."
 Ausgabe:  "[NAME_1], geb. [DATUM/ZEIT_1], behandelt in der [ORGANISATION_1]."
 ```
 
-**Stack:** FastAPI · Microsoft Presidio · spaCy (`de_core_news_lg`) · SQLite · Alembic · Docker
+Bilder (Screenshots, Scans) werden optional per OCR gelesen, durch dieselbe
+Erkennung geschickt und anschließend im Bild geschwärzt. Standard ist die
+komplette OCR-Zeile eines Treffers; die Bildverarbeitung lässt sich im Admin
+unter **Bild-OCR** oder per `ENTITYGUARD_OCR_*` konfigurieren.
+
+**Stack:** FastAPI · Microsoft Presidio · spaCy (`de_core_news_lg`) · Tesseract/RapidOCR · SQLite · Alembic · Docker
 
 ---
 
@@ -129,7 +134,10 @@ Alle Patterns und Entitäten sind über das Admin-Interface konfigurierbar.
 > **API-Schlüssel** erzeugt (Bezeichnung pro App, mehrere Schlüssel möglich).
 > Der Klartext wird **nur einmal** beim Erzeugen angezeigt. Solange **kein
 > aktiver Schlüssel** existiert, antwortet die API mit **HTTP 401**
-> (Fail-Closed). Der Schlüssel wird als Header mitgeschickt:
+> (Fail-Closed). Für Headless-Betrieb (z. B. Docker ohne Zugriff aufs
+> Admin-UI) lässt sich zusätzlich ein Schlüssel per Umgebungsvariable
+> `ENTITYGUARD_API_KEY` bzw. `ENTITYGUARD_API_KEY_FILE` vorgeben (siehe
+> [Umgebungsvariablen](#umgebungsvariablen)). Der Schlüssel wird als Header mitgeschickt:
 >
 > ```bash
 > curl -H "Authorization: Bearer eg_…" …
@@ -151,6 +159,7 @@ Anonymisiert den übergebenen Text.
 | Feld | Typ | Pflicht | Beschreibung |
 |------|-----|---------|--------------|
 | `text` | string | ja | Zu anonymisierender Text |
+| `reuse_placeholders` | boolean | nein (Standard `false`) | `true`: Derselbe Wert (gleicher Text, gleiche Entität) bekommt im ganzen Text **denselben** Platzhalter, das `mapping` hat dann einen Eintrag je Wert. Sinnvoll, wenn mehrere Nachrichten eines Gesprächs als ein Text geschickt werden |
 
 **Response:**
 ```json
@@ -162,9 +171,63 @@ Anonymisiert den übergebenen Text.
 }
 ```
 
-Jede maskierte Entität erhält einen eindeutigen, durchnummerierten Platzhalter (z.B. `[EMAIL_1]`, `[EMAIL_2]` bei zwei E-Mail-Adressen im selben Text). Das `mapping` bildet jeden Platzhalter auf seinen Originalwert ab und erlaubt so eine spätere De-Anonymisierung des Textes.
+Jede maskierte Entität erhält einen eindeutigen, durchnummerierten Platzhalter (z.B. `[EMAIL_1]`, `[EMAIL_2]` bei zwei E-Mail-Adressen im selben Text). Das `mapping` bildet jeden Platzhalter auf seinen Originalwert ab und erlaubt so eine spätere De-Anonymisierung des Textes. Mit `reuse_placeholders: true` teilen sich identische Werte einen Platzhalter.
+
+**Hinweise für große Texte:** Der Text außerhalb der Treffer bleibt Zeichen für Zeichen unverändert (Zeilenumbrüche, Leerzeichen, Trennmarken). Die Analyse läuft im Threadpool, andere Anfragen und `/health` werden dadurch nicht blockiert. Trennmarken ohne Buchstaben (z. B. `=====#1=====`) überstehen die Erkennung, Buchstabenmarken wie `=====MSG-1=====` können von der spaCy-NER als Entität erkannt werden.
 
 **Fehlerverhalten:** Ohne gültigen API-Schlüssel HTTP 401; bei einem internen Fehler gibt der Dienst HTTP 500 zurück und lässt den Text **nicht** unverarbeitet durch (Fail-Closed-Prinzip).
+
+---
+
+### `POST /api/v1/sanitize/image`
+
+Liest Text aus einem Bild per OCR, maskiert erkannte Entitäten und liefert ein
+redigiertes PNG zurück. Das Bild wird nur im Speicher verarbeitet und **nie**
+gespeichert. Bei einem Fehler wird das Originalbild nicht zurückgegeben.
+
+**Request:**
+```json
+{
+  "image_base64": "data:image/png;base64,iVBORw0KGgo...",
+  "reuse_placeholders": true
+}
+```
+
+| Feld | Typ | Pflicht | Beschreibung |
+|------|-----|---------|--------------|
+| `image_base64` | string | ja | Base64 oder Data-URI (`data:image/png;base64,...`); PNG, JPEG oder WebP |
+| `reuse_placeholders` | boolean | nein (Standard `true`) | Gleicher Wert = gleicher Platzhalter im OCR-Text |
+
+**Response:**
+```json
+{
+  "sanitized_image_base64": "iVBORw0KGgo...",
+  "sanitized_text": "Patient [NAME_1] aus [ADRESSE/ORT_1]",
+  "ocr_text": "Patient Max Mustermann aus Berlin",
+  "mapping": {"[NAME_1]": "Max Mustermann", "[ADRESSE/ORT_1]": "Berlin"},
+  "ocr_engine": "tesseract",
+  "ocr_device": "cpu",
+  "ocr_confidence": 0.91,
+  "latency_ms": 180.5,
+  "image_width": 1200,
+  "image_height": 800,
+  "redactions": [{"box": [10, 20, 210, 50], "entity_types": ["PERSON"], "texts": ["Max Mustermann"]}],
+  "entities": [{"type": "PERSON", "text": "Max Mustermann", "score": 0.99, "box": [10, 20, 210, 50]}],
+  "warnings": []
+}
+```
+
+`redactions` und `entities` dienen der Admin-Vorschau. `sanitized_image_base64`
+ist ein PNG ohne Metadaten. Die Standard-Schwärzung `line` überdeckt die
+komplette OCR-Zeile eines Treffers; `entity` schwärzt nur die erkannten Wörter,
+`all_text` jeden erkannten Text. Bei `all_text` ist `sanitized_text` der
+unveränderte OCR-Text (es gibt keine Entitäts-Platzhalter); maßgeblich ist das
+redigierte Bild. OCR erfasst nur gedruckten Text – keine Handschrift, Gesichter
+oder Logos.
+
+**Fehlerverhalten:** HTTP 400/413/415 bei ungültigem, zu großem oder nicht
+unterstütztem Bild; HTTP 404 wenn die Bildverarbeitung deaktiviert ist; HTTP
+500 bei OCR-/Verifikationsfehlern (Fail-Closed).
 
 ---
 
@@ -218,6 +281,7 @@ Das Admin-Interface verwaltet Entitäten, ihre Muster und optional zuschaltbare 
 - **Muster hinzufügen** — als Stichwörter (einfach) oder Regex (fortgeschritten), mit Score (0.0–1.0)
 - **Kontextwörter** — Wörter, die den Erkennungs-Score boosten, wenn sie im Text in der Nähe stehen
 - **Muster-Tester** — Regex testen, bevor sie aktiv werden
+- **Bild-OCR** — Tesseract/RapidOCR, Gerät, Schwärzungsmodus und Limits einstellen; Umgebungsvariablen überschreiben die Werte
 - **Modelle** — optionale Transformer-Modelle per Schalter zuschalten
 - **Ausnahmeliste** — Werte, die grundsätzlich **nie** maskiert werden (z. B. ein Firmenname, der fälschlich als Person/Organisation erkannt wird)
 - **API-Schlüssel** — Zugangsschlüssel für die JSON-API (pro App, mehrere möglich), an-/ausschaltbar, einmalige Klartext-Anzeige
@@ -256,10 +320,17 @@ gespeichert.** Steuerung per Umgebungsvariable; Einträge werden nach
 `TRACE_RETENTION_DAYS` Tagen beim Start automatisch gelöscht.
 
 Für Tests gibt es unter `http://localhost:9500/admin/sanitize` eine
-Testseite (nur für eingeloggte Nutzer): links Text eingeben oder Datei laden,
-rechts erscheint live die anonymisierte Version (inkl. Hervorhebung der
-Platzhalter, Hover zeigt den Originalwert). Die Seite nutzt die Admin-Session
-statt eines API-Schlüssels — im Browser liegt also kein Schlüssel.
+Testseite (nur für eingeloggte Nutzer) mit zwei Modi:
+
+- **Text:** links Text eingeben oder Datei laden, rechts erscheint live die
+  anonymisierte Version (inkl. Hervorhebung der Platzhalter, Hover zeigt den
+  Originalwert).
+- **Bild:** links das Original mit roten Markierungen der geschwärzten
+  Bereiche, rechts das redigierte PNG, darunter der maskierte OCR-Text,
+  Engine/Gerät/Konfidenz und die Anzahl der Masken.
+
+Die Seite nutzt die Admin-Session statt eines API-Schlüssels — im Browser
+liegt also kein Schlüssel.
 
 ### Reload nach Änderungen
 
@@ -291,13 +362,13 @@ Das Umschalten von Modellen unter **Modelle** löst den Reload automatisch aus.
 
 ## OpenWebUI-Integration
 
-EntityGuard lässt sich als Filter in OpenWebUI einbinden. Der Filter fängt jede Nutzer-Nachricht ab, schickt sie an EntityGuard und ersetzt den Originaltext durch die anonymisierte Version — bevor das LLM sie sieht.
+EntityGuard lässt sich als Filter in OpenWebUI einbinden. Der Filter fängt jede Nutzer-Nachricht ab, schickt sie an EntityGuard und ersetzt den Originaltext durch die anonymisierte Version — bevor das LLM sie sieht. Der fertige Filter behandelt auch Bilder.
 
 Vollständige Anleitung inkl. Filter-Code, Konfiguration und Docker-Setup: **[docs/OpenWebUI.md](docs/OpenWebUI.md)**
 
 **Kurzfassung:**
 
-1. Filter-Code aus `docs/OpenWebUI.md` in OpenWebUI unter **Settings → Functions** einfügen
+1. Filter aus [`integrations/openwebui/entityguard_filter.py`](integrations/openwebui/entityguard_filter.py) in OpenWebUI unter **Settings → Functions** einfügen (Kurzanleitung: [`integrations/openwebui/README.md`](integrations/openwebui/README.md))
 2. Als globalen Filter aktivieren
 3. `api_url` auf den EntityGuard-Dienst setzen **und** `api_key` auf einen im Admin-Interface erzeugten Schlüssel:
 
@@ -312,6 +383,10 @@ durch die Originalwerte ersetzen (De-Anonymisierung über das `mapping`); das
 LLM sieht die Klardaten dabei nie. Details und Code:
 [docs/OpenWebUI.md](docs/OpenWebUI.md#antwort-de-anonymisierung-mit-dem-mapping).
 
+Für Bilder zusätzlich `image_api_url` auf den Bild-Endpunkt setzen (z. B.
+`http://entityguard:9500/api/v1/sanitize/image`) und `image_mode` wählen:
+`block` (Default, fail-closed) oder `redact` (OCR + Schwärzung).
+
 ---
 
 ## Docker
@@ -322,7 +397,45 @@ LLM sieht die Klardaten dabei nie. Details und Code:
 docker-compose up -d
 ```
 
-Das Dockerfile installiert das spaCy-Modell bereits beim Build — der Container ist beim Start sofort bereit.
+Das Dockerfile installiert das spaCy-Modell sowie Tesseract inklusive der
+Sprachpakete `deu` und `eng` bereits beim Build — der Container ist beim Start
+sofort bereit. RapidOCR ist im Image enthalten; für RapidOCR auf einer
+CUDA-GPU mit `--build-arg OCR_VARIANT=gpu` bauen (installiert
+`onnxruntime-gpu` statt `onnxruntime`).
+
+### Headless (ohne Admin-UI)
+
+Soll der Container ohne Zugriff aufs Admin-UI laufen, lassen sich API-Schlüssel,
+Admin-Passwort, Transformer-Modell und Bild-OCR per Umgebung vorgeben:
+
+```bash
+export ENTITYGUARD_API_KEY=$(openssl rand -hex 32)
+export ENTITYGUARD_ADMIN_PASSWORD=$(openssl rand -base64 24)
+docker run -d -p 9500:9500 \
+  -e ENTITYGUARD_API_KEY -e ENTITYGUARD_ADMIN_PASSWORD \
+  -e ENTITYGUARD_MODELS=openmed_small \
+  -e ENTITYGUARD_OCR_ENGINE=auto \
+  -e ENTITYGUARD_OCR_DEVICE=auto \
+  -e ENTITYGUARD_OCR_REDACTION=line \
+  -v entityguard-data:/app/data \
+  ghcr.io/s2a-open-technologies/entityguard:latest-cpu
+```
+
+In `docker-compose.yml` die auskommentierten Zeilen aktivieren (oder die `_FILE`-Varianten
+mit Docker Secrets nutzen).
+
+- **`ENTITYGUARD_API_KEY`** gilt zusätzlich zu den im Admin-UI erzeugten Schlüsseln.
+- **`ENTITYGUARD_ADMIN_PASSWORD`** legt beim Start das Konto `admin` (bzw.
+  `ENTITYGUARD_ADMIN_USERNAME`) als aktiven Admin mit diesem Passwort an oder setzt es zurück –
+  damit ist das Standard-Passwort `admin` sofort weg. Die Umgebung ist maßgeblich: Ein im UI
+  geändertes Passwort wird beim nächsten Neustart wieder überschrieben.
+- **`ENTITYGUARD_MODELS`** schaltet beim Start genau die genannten Modelle ein und alle anderen
+  aus (`fhswf`, `openmed_small`, `openmed_base`, `openmed_large` oder der volle Registry-Name,
+  mehrere komma-getrennt; `none` = alle aus). Schalter im UI wirken bis zum nächsten Neustart.
+- **Ohne Internetverbindung:** Transformer-Modelle werden beim ersten Einsatz von HuggingFace in
+  `/app/data/hf` (Volume) geladen. Für einen Offline-Container das Modell einmal mit
+  Internetzugang laden (oder den HF-Cache ins Volume kopieren) und danach `HF_HUB_OFFLINE=1`
+  setzen. spaCy-Modell und Datenbank brauchen keine Verbindung.
 
 ### Health-Check
 
@@ -358,6 +471,23 @@ Versions-Tags: `X.Y.Z`, `X.Y`, `X` (jeweils auch mit Suffix `-cpu`); `edge` / `e
 | Variable | Beschreibung | Default |
 |----------|--------------|---------|
 | `PYTHONUNBUFFERED` | Log-Ausgabe direkt in Container-Logs | `1` |
+| `ENTITYGUARD_API_KEY` | API-Schlüssel für Headless-Betrieb, zusätzlich zu den Schlüsseln aus dem Admin-UI; mehrere komma-getrennt, mind. 16 Zeichen (kürzere werden ignoriert). Wird nicht gespeichert, Änderung erst nach Neustart. Erzeugen z. B. mit `openssl rand -hex 32` | – |
+| `ENTITYGUARD_API_KEY_FILE` | Pfad zu einer Datei mit Schlüssel(n), je Zeile oder komma-getrennt (Docker Secrets, z. B. `/run/secrets/entityguard_api_key`) | – |
+| `ENTITYGUARD_ADMIN_PASSWORD` | Passwort des Admin-Kontos; beim Start wird das Konto angelegt bzw. Passwort, Rolle `admin` und Aktiv-Status gesetzt (mind. 8 Zeichen). Überschreibt UI-Änderungen bei jedem Neustart | – |
+| `ENTITYGUARD_ADMIN_PASSWORD_FILE` | Wie oben, aus Datei (Docker Secret) | – |
+| `ENTITYGUARD_ADMIN_USERNAME` | Benutzername für `ENTITYGUARD_ADMIN_PASSWORD` | `admin` |
+| `ENTITYGUARD_MODELS` | Transformer-Modelle, die beim Start aktiv sind (alle anderen werden ausgeschaltet): `fhswf`, `openmed_small`, `openmed_base`, `openmed_large` bzw. voller Registry-Name, komma-getrennt; `none` = alle aus. Nicht gesetzt = Schalter aus `/admin/modelle` bleiben unverändert | – |
+| `ENTITYGUARD_OCR_ENABLED` | Bildverarbeitung an/aus; überschreibt `/admin/ocr` | `true` |
+| `ENTITYGUARD_OCR_ENGINE` | `auto`, `tesseract` oder `rapidocr`; `auto` nutzt RapidOCR nur bei CUDA, sonst Tesseract | `auto` |
+| `ENTITYGUARD_OCR_DEVICE` | RapidOCR-Gerät: `auto`, `cpu`, `cuda`. Ohne CUDA fällt `cuda` auf Tesseract zurück | `auto` |
+| `ENTITYGUARD_OCR_LANG` | Tesseract-Sprachen (z. B. `deu+eng`) | `deu+eng` |
+| `ENTITYGUARD_OCR_REDACTION` | `entity`, `line` oder `all_text` | `line` |
+| `ENTITYGUARD_OCR_MIN_CONFIDENCE` | Mindest-Konfidenz (0–1) | `0.5` |
+| `ENTITYGUARD_OCR_VERIFY` | Redigiertes Bild erneut per OCR prüfen; Rest-Treffer = Fail-Closed | `false` |
+| `ENTITYGUARD_IMAGE_MAX_BYTES` | Maximale Bildgröße in Bytes | `10485760` |
+| `ENTITYGUARD_IMAGE_MAX_PIXELS` | Maximale Pixelzahl | `40000000` |
+| `ENTITYGUARD_OCR_TIMEOUT_SECONDS` | OCR-Zeitlimit in Sekunden | `30` |
+| `ENTITYGUARD_TESSERACT_CMD` | Optionaler Pfad zum Tesseract-Binary | `tesseract` |
 | `TRACE_ENABLED` | Inhaltsfreies Anfragen-Tracing an/aus (`true`/`false`) | `true` |
 | `TRACE_RETENTION_DAYS` | Aufbewahrung der Trace-Einträge in Tagen | `7` |
 | `TRACE_HMAC_SECRET` | Secret für den optionalen keyed Input-Hash (nur wenn gesetzt wird gehasht) | – |
@@ -422,11 +552,13 @@ main.py                          FastAPI App Factory, Uvicorn Port 9500
 │   └── _analyzer                Gecachter CustomAnalyzer (Singleton)
 │
 ├── backend/components/
-│   └── cstm_analyzer.py         CustomAnalyzer (Presidio + spaCy)
-│                                DatabasePatternProvider (DB → PatternRecognizer)
+│   ├── cstm_analyzer.py         CustomAnalyzer (Presidio + spaCy)
+│   │                            DatabasePatternProvider (DB → PatternRecognizer)
+│   ├── ocr.py                   Tesseract/RapidOCR-Abstraktion
+│   └── image_sanitizer.py       OCR-Text, Span→Box-Mapping, Schwärzung, PNG
 │
 ├── backend/database/
-│   ├── models.py                EntityModel, PatternModel, ContextWordModel, DetectorModel, AdminUser
+│   ├── models.py                EntityModel, PatternModel, ContextWordModel, DetectorModel, AdminUser, AppSettingModel
 │   ├── crud.py                  CRUD-Operationen
 │
 ├── backend/admin/               Admin-UI-Routen (Jinja2, Session-Auth)
@@ -434,6 +566,8 @@ main.py                          FastAPI App Factory, Uvicorn Port 9500
 ├── frontend/                    Statische Assets & Templates
 │   ├── static/                  CSS, JS
 │   └── templates/               Jinja2-Templates (Admin-UI, Sanitize-Seite)
+│
+├── integrations/openwebui/      Fertiger OpenWebUI-Filter (Text + Bilder)
 │
 └── alembic/                     Datenbankmigrationen (inkl. Seed-Daten)
 ```
@@ -455,7 +589,20 @@ CustomAnalyzer.process_text()
 Bereinigter Text → LLM
 ```
 
-**Fail-Closed:** Jeder Fehler in der Pipeline gibt HTTP 500 zurück. Der unbereingte Text erreicht das LLM nie.
+Bilder durchlaufen denselben Analyzer, nur mit OCR davor:
+
+```
+Bild (Base64) → OCR (Tesseract/RapidOCR) → OCR-Text + Boxen
+      │
+      ▼
+CustomAnalyzer.analyze_text() → Entitäten + Spans
+      │
+      ▼
+Spans → Boxen (Zeile oder Wort) → schwarze Overlays → PNG (Base64)
+```
+
+**Fail-Closed:** Jeder Fehler in der Pipeline gibt HTTP 500 zurück. Der
+unbereinigte Text bzw. das Originalbild erreicht das LLM nie.
 
 ---
 
