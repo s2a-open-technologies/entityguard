@@ -1,5 +1,5 @@
 # EntityGuard - Docker Image
-FROM python:3.13-slim
+FROM python:3.14-slim
 
 # TORCH_VARIANT=default -> torch aus PyPI (CUDA-Wheels auf amd64)
 # TORCH_VARIANT=cpu     -> torch CPU-only (deutlich kleineres Image)
