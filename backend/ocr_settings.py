@@ -59,6 +59,26 @@ ENGINES = ("auto", "tesseract", "rapidocr")
 DEVICES = ("auto", "cpu", "cuda")
 REDACTIONS = ("entity", "line", "all_text")
 
+# Human-readable defaults for the admin env-var reference (bool -> on/off).
+ENV_DEFAULTS_DISPLAY: dict[str, str] = {
+    key: "on" if value == "true" else "off" if value == "false" else value
+    for key, value in DEFAULTS.items()
+}
+
+# Human-readable accepted values for the admin env-var reference.
+ENV_VALUES: dict[str, str] = {
+    "ocr_enabled": "on|off",
+    "ocr_engine": "|".join(ENGINES),
+    "ocr_device": "|".join(DEVICES),
+    "ocr_lang": "deu+eng",
+    "ocr_redaction": "|".join(REDACTIONS),
+    "ocr_min_confidence": "0.0-1.0",
+    "ocr_verify": "on|off",
+    "image_max_bytes": "Bytes (>=1024)",
+    "image_max_pixels": "Pixel (>=10000)",
+    "ocr_timeout_seconds": "Sekunden (>=1)",
+}
+
 
 @dataclass(frozen=True)
 class OcrSettings:

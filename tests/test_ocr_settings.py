@@ -52,6 +52,14 @@ def test_invalid_environment_value_is_ignored_with_warning(monkeypatch):
     assert any("ENTITYGUARD_OCR_MIN_CONFIDENCE" in warning for warning in settings.warnings)
 
 
+def test_env_values_cover_every_environment_variable():
+    assert set(ocr_settings.ENV_VALUES) == set(ocr_settings.ENV_NAMES)
+    assert ocr_settings.ENV_VALUES["ocr_enabled"] == "on|off"
+    assert ocr_settings.ENV_VALUES["ocr_engine"] == "auto|tesseract|rapidocr"
+    assert ocr_settings.ENV_DEFAULTS_DISPLAY["ocr_enabled"] == "on"
+    assert ocr_settings.ENV_DEFAULTS_DISPLAY["ocr_verify"] == "off"
+
+
 def test_defaults_are_used_without_database_or_environment(monkeypatch):
     monkeypatch.setattr(ocr_settings, "get_app_settings", lambda db: {})
     for env_name in ocr_settings.ENV_NAMES.values():

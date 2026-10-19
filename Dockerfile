@@ -1,12 +1,9 @@
 # EntityGuard - Docker Image
-FROM python:3.13-slim
+FROM python:3.14-slim
 
 # TORCH_VARIANT=default -> torch aus PyPI (CUDA-Wheels auf amd64)
 # TORCH_VARIANT=cpu     -> torch CPU-only (deutlich kleineres Image)
 ARG TORCH_VARIANT=default
-# OCR_VARIANT=cpu  -> onnxruntime (CPU)
-# OCR_VARIANT=gpu  -> onnxruntime-gpu (RapidOCR auf CUDA)
-ARG OCR_VARIANT=cpu
 
 # Arbeitsverzeichnis
 WORKDIR /app
@@ -34,6 +31,9 @@ COPY --from=ghcr.io/astral-sh/uv:0.8.11 /uv /uvx /bin/
 
 # Python-Abhängigkeiten installieren (nur Produktionsabhängigkeiten)
 COPY pyproject.toml uv.lock ./
+# RapidOCR auf CUDA nutzt torch; dessen .pth-Modelle sind nicht im Wheel und
+# landen in site-packages, das zur Laufzeit (uid 10001) nicht beschreibbar ist.
+# Deshalb beim Build vorladen (nicht bei TORCH_VARIANT=cpu, dort gibt es kein CUDA).
 RUN uv sync --frozen --no-dev && \
     if [ "$TORCH_VARIANT" = "cpu" ]; then \
         uv pip install --python /app/.venv/bin/python --reinstall --no-deps torch \
@@ -42,9 +42,8 @@ RUN uv sync --frozen --no-dev && \
             $(/app/.venv/bin/python -c "import importlib.metadata as m; print(' '.join(sorted(d.metadata['Name'] for d in m.distributions() if d.metadata['Name'].lower().startswith(('nvidia-', 'triton')))))") \
             2>/dev/null || true; \
     fi && \
-    if [ "$OCR_VARIANT" = "gpu" ]; then \
-        uv pip uninstall --python /app/.venv/bin/python onnxruntime && \
-        uv pip install --python /app/.venv/bin/python --no-deps onnxruntime-gpu; \
+    if [ "$TORCH_VARIANT" != "cpu" ]; then \
+        python -c "from rapidocr import EngineType, RapidOCR; RapidOCR(params={'Det.engine_type': EngineType.TORCH, 'Cls.engine_type': EngineType.TORCH, 'Rec.engine_type': EngineType.TORCH, 'Rec.lang_type': 'de'})"; \
     fi && \
     python -c "import de_core_news_lg, torch; print('spaCy model loaded:', de_core_news_lg.__name__, '| torch', torch.__version__)"
 

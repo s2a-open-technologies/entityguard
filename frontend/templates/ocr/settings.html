@@ -144,13 +144,9 @@
     <p class="help-text">
         Diese Variablen überschreiben die Admin-Werte und werden nicht in die Datenbank geschrieben:
     </p>
-    <div class="detail-grid">
-        {% for key, env_name in env_names.items() %}
-        <div class="detail-card">
-            <h3><code>{{ env_name }}</code></h3>
-            <p class="help-text mb-0">Einstellung: <code>{{ key }}</code>{% if key in env_overrides %} — aktuell aktiv{% endif %}</p>
-        </div>
-        {% endfor %}
+    <div class="detail-card">
+        <pre class="env-md">{% for key, env_name in env_names.items() %}{{ env_name }}={{ env_values[key] }}  # {{ key }}, Standard: {{ env_defaults[key] }}{% if key in env_overrides %} (aktuell aktiv){% endif %}
+{% endfor %}</pre>
     </div>
 </div>
 {% endblock %}

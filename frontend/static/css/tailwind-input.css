@@ -156,6 +156,14 @@
         @apply shrink-0;
     }
 
+    /* The mode wrappers must participate in the full-height flex chain,
+     * otherwise the image grid collapses to its content height and jumps
+     * when the redacted image/text appears. */
+    .content-fullheight #text-mode,
+    .content-fullheight #image-mode {
+        @apply flex flex-col flex-1 min-h-0;
+    }
+
     .content-fullheight .sanitize-grid {
         @apply flex-1 min-h-0;
     }
@@ -165,9 +173,15 @@
     }
 
     .content-fullheight .sanitize-input,
-    .content-fullheight .sanitize-output,
-    .content-fullheight .image-preview-wrap {
+    .content-fullheight .sanitize-output {
         min-height: 0;
+    }
+
+    /* Both image previews keep the same share of the stretched panel height,
+     * so loading the redacted image cannot resize the two sides. */
+    .content-fullheight .image-preview-wrap {
+        @apply min-h-0;
+        flex: 0 0 55%;
     }
 
     /* Login */
@@ -508,6 +522,12 @@
         @apply mb-2 text-slate-500;
     }
 
+    /* Monospace environment-variable reference in the OCR admin page. */
+    .env-md {
+        @apply m-0 p-5 rounded-lg bg-slate-50 border border-slate-200 overflow-x-auto text-[0.8125rem] leading-6 text-slate-700;
+        font-family: var(--font-mono);
+    }
+
     /* Tags */
     .tags {
         @apply flex flex-wrap gap-2 mt-2;
@@ -725,6 +745,19 @@
         @apply block max-h-full max-w-full object-contain;
     }
 
+    #image-ocr-output {
+        @apply mt-3;
+        min-height: 7rem;
+        max-height: 12rem;
+        overflow-y: auto;
+    }
+
+    .content-fullheight #image-ocr-output {
+        min-height: 0;
+        max-height: none;
+        flex: 1 1 0;
+    }
+
     .image-stage canvas {
         @apply pointer-events-none absolute inset-0 h-full w-full;
     }
@@ -858,6 +891,18 @@
     .content-fullheight .sanitize-input,
     .content-fullheight .sanitize-output {
         min-height: 12rem;
+    }
+
+    .content-fullheight .image-preview-wrap {
+        flex: 0 0 auto;
+        height: 18rem;
+    }
+
+    .content-fullheight #image-ocr-output {
+        flex: 0 0 auto;
+        min-height: 7rem;
+        max-height: 12rem;
+        overflow-y: auto;
     }
 
     .sanitize-panel {

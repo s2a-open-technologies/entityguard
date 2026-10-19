@@ -151,8 +151,8 @@ automatischen Löschung, damit die Nachvollziehbarkeit erhalten bleibt.
   gedruckter Text. Handschrift, Gesichter, Logos, Diagramme und schlechte
   Scans bleiben sichtbar; für strenge Vorgaben Bilder blockieren
   (`image_mode=block`) oder `OCR_REDACTION=all_text` mit Restrisiko nutzen.
-  RapidOCR kann beim ersten Einsatz Modelle nachladen; im Offline-Betrieb
-  vorher cachen.
+  RapidOCR lädt die torch-Modelle für den GPU-Betrieb beim ersten Einsatz
+  nach (Docker-Image: beim Build vorgeladen); im Offline-Betrieb vorher cachen.
 
 ## Verweise
 

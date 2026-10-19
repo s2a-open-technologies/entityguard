@@ -244,6 +244,17 @@ def _encode_png_base64(image: Image.Image) -> str:
     return base64.b64encode(buffer.getvalue()).decode("ascii")
 
 
+def _analysis_text(text: str) -> str:
+    """Join OCR lines for NER while keeping character offsets unchanged.
+
+    OCR newlines describe the image layout, not sentence boundaries. Names,
+    addresses or IBANs wrapped across lines are otherwise split for the
+    analyzer. Replacing one character with another keeps span offsets valid
+    for the original text.
+    """
+    return text.replace("\n", " ")
+
+
 def _analyze(analyzer: CustomAnalyzer, text: str):
     analyze_text = getattr(analyzer, "analyze_text", None)
     if callable(analyze_text):
@@ -289,7 +300,7 @@ def sanitize_image_bytes(
             warnings=warnings,
         )
 
-    results, placeholders = _analyze(analyzer, ocr.text)
+    results, placeholders = _analyze(analyzer, _analysis_text(ocr.text))
     sanitized_text, mapping = apply_matches(ocr.text, results, placeholders, reuse_placeholders)
     redactions, entities = _redactions_for_results(
         results, ocr, settings.redaction, image.width, image.height, settings.min_confidence
@@ -309,7 +320,7 @@ def sanitize_image_bytes(
         try:
             verification = run_ocr(redacted, settings)
             if verification.text.strip():
-                verify_results, _ = _analyze(analyzer, verification.text)
+                verify_results, _ = _analyze(analyzer, _analysis_text(verification.text))
                 if verify_results:
                     raise ImageSanitizerError(
                         "OCR-Verifikation fehlgeschlagen: nach der Redaktion wurden noch sensible Stellen erkannt",

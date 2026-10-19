@@ -76,6 +76,44 @@ def fake_ocr(text="Max Mustermann", box=(10, 10, 210, 40), engine="tesseract"):
     )
 
 
+def fake_multiline_ocr():
+    lines = []
+    cursor = 0
+    for line_id, (text, box) in enumerate((
+        ("Max", (10, 10, 60, 30)),
+        ("Mustermann", (10, 40, 150, 60)),
+    )):
+        token = OcrToken(
+            text=text, start=cursor, end=cursor + len(text), box=box,
+            confidence=0.9, line_id=line_id,
+        )
+        lines.append(OcrLine(
+            line_id=line_id, text=text, start=cursor, end=cursor + len(text),
+            box=box, confidence=0.9, tokens=[token],
+        ))
+        cursor += len(text) + 1
+    return OcrResult(
+        text="Max\nMustermann", lines=lines, engine="rapidocr", device="cuda",
+        confidence=0.9, duration_ms=1.0, warnings=[],
+    )
+
+
+def test_wrapped_entity_is_analyzed_as_joined_text(monkeypatch):
+    monkeypatch.setattr(
+        image_sanitizer, "run_ocr",
+        lambda image, settings: fake_multiline_ocr(),
+    )
+    analyzer = FakeAnalyzer([FakeResult(0, len("Max Mustermann"))])
+
+    result = image_sanitizer.sanitize_image_bytes(
+        png_bytes(), analyzer, make_settings(redaction="line")
+    )
+
+    assert analyzer.calls == ["Max Mustermann"]
+    assert result.sanitized_text == "[NAME_1]"
+    assert len(result.redactions) == 2
+
+
 def test_line_redaction_draws_black_box_and_returns_mapping(monkeypatch):
     monkeypatch.setattr(image_sanitizer, "run_ocr", lambda image, settings: fake_ocr())
     analyzer = FakeAnalyzer([FakeResult(0, len("Max Mustermann"))])

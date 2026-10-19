@@ -12,6 +12,37 @@ section as the GitHub Release notes.
 
 ## [Unreleased]
 
+### Changed
+
+- Admin-Seite **Bild-OCR**: Die Umgebungsvariablen stehen mit erlaubten Werten und
+  Standardwerten in einer gemeinsamen Karte statt in einer eigenen Karte pro Variable.
+- RapidOCR fällt bei einem GPU-Fehler ohne verfügbaren Tesseract auf die CPU-Ausführung
+  zurück, statt die Anfrage abzubrechen.
+- Login: Die Fehlermeldung steht in der Login-Karte, statt daneben zu erscheinen und die
+  Karte nach rechts zu verschieben.
+- RapidOCR läuft auf der GPU jetzt über **torch** statt `onnxruntime-gpu`. ONNX Runtime baute
+  seinen CUDA-Kontext für jeden OCR-Thread neu auf, eine Full-HD-Seite brauchte so ~17 s (CPU:
+  ~9 s, jetzt GPU: ~1,4 s). CUDA wird über `torch.cuda.is_available()` erkannt; für die CPU
+  bleibt `onnxruntime`. `onnxruntime-gpu`, der manuelle Paket-Tausch und das Build-Arg
+  `OCR_VARIANT` entfallen; das Standard-Docker-Image lädt die torch-OCR-Modelle beim Build vor.
+
+### Fixed
+
+- Maskierung: Überlappende Treffer werden zu einem Bereich zusammengefasst, statt den späteren
+  zu verwerfen. Bisher gewann z. B. das Anrede-Muster „Herr Paul“ gegen den NER-Treffer
+  „Paul von Weizsäcker“, und der Nachname blieb im Klartext stehen
+  (`[NAME_1] von Weizsäcker`). Der Platzhaltertyp kommt vom längsten, bei Gleichstand vom
+  sichersten Treffer.
+- Admin-Seite **Anonymisieren** (Bildmodus): Original und redigierte Vorschau behalten die
+  gleiche Größe; der maskierte OCR-Text darunter scrollt in seinem Bereich, statt das Bild
+  beim Eintreffen des Ergebnisses zu verkleinern und das Layout zu verschieben.
+- Bild-OCR: RapidOCR liefert jetzt wortgenaue Boxen (präzisere `entity`-Schwärzung), OCR-Zeilen
+  werden für die Entitätserkennung zu einem Fließtext verbunden (erkennt umgebrochene Namen,
+  Adressen und IBANs) und die maximale OCR-Auflösung wurde auf 3200px erhöht.
+- Bild-OCR: RapidOCR-Wortboxen werden bis zur Lücke zum Nachbarwort und auf die volle
+  Zeilenhöhe erweitert. Die aus den Zeichenpositionen geschätzten Boxen waren um einige Pixel
+  nach rechts versetzt, sodass die `entity`-Schwärzung den ersten Buchstaben anschnitt.
+
 ## [1.2.0] — 2026-10-19
 
 ### Added

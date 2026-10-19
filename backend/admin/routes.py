@@ -40,7 +40,9 @@ from backend.components.image_sanitizer import (
 from backend.components.ocr import available_engines, clear_ocr_cache
 from backend.ocr_settings import (
     DEFAULTS as OCR_DEFAULTS,
+    ENV_DEFAULTS_DISPLAY as OCR_ENV_DEFAULTS,
     ENV_NAMES as OCR_ENV_NAMES,
+    ENV_VALUES as OCR_ENV_VALUES,
     get_ocr_settings,
     save_ocr_settings,
     settings_for_admin,
@@ -713,10 +715,11 @@ async def ocr_settings_page(request: Request, user: dict = Depends(require_auth)
             request,
             values=values,
             env_names=OCR_ENV_NAMES,
+            env_values=OCR_ENV_VALUES,
+            env_defaults=OCR_ENV_DEFAULTS,
             env_overrides=env_overrides,
             settings=settings,
             engines=available_engines(settings),
-            defaults=OCR_DEFAULTS,
         )
         return templates.TemplateResponse("ocr/settings.html", context)
     finally:
@@ -747,10 +750,11 @@ async def update_ocr_settings(request: Request, user: dict = Depends(require_adm
                 request,
                 values=values,
                 env_names=OCR_ENV_NAMES,
+                env_values=OCR_ENV_VALUES,
+                env_defaults=OCR_ENV_DEFAULTS,
                 env_overrides=env_overrides,
                 settings=settings,
                 engines=available_engines(settings),
-                defaults=OCR_DEFAULTS,
                 error=str(exc),
             )
             return templates.TemplateResponse("ocr/settings.html", context, status_code=400)

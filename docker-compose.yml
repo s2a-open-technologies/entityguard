@@ -7,7 +7,6 @@ services:
       context: .
       args:
         TORCH_VARIANT: ${TORCH_VARIANT:-default}
-        OCR_VARIANT: ${OCR_VARIANT:-cpu}
     container_name: entityguard
     ports:
       - "9500:9500"

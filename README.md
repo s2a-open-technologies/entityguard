@@ -61,6 +61,20 @@ uv run python main.py
 Der Dienst ist unter `http://localhost:9500` erreichbar.  
 Der Admin-Benutzer `admin` / `admin` wird durch `uv run alembic upgrade head` angelegt.
 
+#### RapidOCR auf CUDA-GPU (optional)
+
+RapidOCR nutzt auf der GPU das bereits installierte `torch` mit CUDA, auf der
+CPU das mitgelieferte `onnxruntime`. Es ist keine zusätzliche Einrichtung
+nötig: Mit CUDA-kompatiblem Treiber und `torch.cuda.is_available()` wählt
+`auto` RapidOCR auf der GPU, sonst Tesseract. Prüfen:
+
+```bash
+uv run python -c "import torch; print(torch.cuda.is_available())"
+```
+
+Die torch-Modelle von RapidOCR (~32 MB) werden beim ersten GPU-Einsatz
+heruntergeladen; im Offline-Betrieb vorher einmal laden.
+
 ### Erster Test
 
 Zuerst im Admin-Interface unter **API-Schlüssel** einen Schlüssel erzeugen
@@ -399,9 +413,10 @@ docker-compose up -d
 
 Das Dockerfile installiert das spaCy-Modell sowie Tesseract inklusive der
 Sprachpakete `deu` und `eng` bereits beim Build — der Container ist beim Start
-sofort bereit. RapidOCR ist im Image enthalten; für RapidOCR auf einer
-CUDA-GPU mit `--build-arg OCR_VARIANT=gpu` bauen (installiert
-`onnxruntime-gpu` statt `onnxruntime`).
+sofort bereit. RapidOCR ist im Image enthalten. Im Standard-Image
+(torch mit CUDA) läuft es auf einer NVIDIA-GPU über torch, die Modelle dafür
+werden beim Build vorgeladen; das `-cpu`-Image nutzt Tesseract bzw. RapidOCR
+auf der CPU.
 
 ### Headless (ohne Admin-UI)
 

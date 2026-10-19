@@ -22,7 +22,7 @@ import shutil
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Optional
 
 from backend.ocr_settings import OcrSettings
@@ -100,10 +100,10 @@ def tesseract_available(settings: OcrSettings) -> bool:
 
 
 def _cuda_available() -> bool:
-    """Return whether ONNX Runtime exposes a CUDA execution provider."""
+    """Return whether torch can use a CUDA GPU (RapidOCR's GPU backend)."""
     try:
-        import onnxruntime
-        return "CUDAExecutionProvider" in onnxruntime.get_available_providers()
+        import torch
+        return torch.cuda.is_available()
     except Exception:
         return False
 
@@ -284,11 +284,23 @@ def _get_rapidocr_engine(device: str, settings: OcrSettings):
     if key in _engine_cache:
         return _engine_cache[key]
 
-    from rapidocr import RapidOCR
+    from rapidocr import EngineType, RapidOCR
 
-    params: dict[str, object] = {}
+    # Keep more detail than RapidOCR's 2000px default and retain faint lines
+    # instead of dropping them below text_score 0.5. Low-confidence lines are
+    # still conservatively redacted via min_confidence.
+    params: dict[str, object] = {
+        "Global.max_side_len": 3200,
+        "Global.text_score": 0.3,
+    }
     if device == "cuda":
-        params["EngineConfig.onnxruntime.use_cuda"] = True
+        # GPU runs on torch, not onnxruntime-gpu: ONNX Runtime keeps its
+        # CUDA/cuDNN state per thread and re-runs the exhaustive conv algo
+        # search for every new timeout worker thread (~10x slower than CPU).
+        # torch is already installed with CUDA for the transformer models.
+        for stage in ("Det", "Cls", "Rec"):
+            params[f"{stage}.engine_type"] = EngineType.TORCH
+        params["EngineConfig.torch.use_cuda"] = True
     if "deu" in settings.lang or "ger" in settings.lang:
         params["Rec.lang_type"] = "de"
     elif "eng" in settings.lang:
@@ -300,42 +312,116 @@ def _get_rapidocr_engine(device: str, settings: OcrSettings):
     return engine
 
 
+def _fit_word_boxes(
+    tokens: list[OcrToken],
+    line_box: tuple[int, int, int, int],
+) -> list[OcrToken]:
+    """Stretch RapidOCR word boxes so they tile the detected line box.
+
+    RapidOCR derives word boxes from CTC character positions, which are
+    typically shifted by a few pixels and clip the first letter of a word.
+    The line box from text detection is reliable, so each word is extended to
+    the middle of the gap to its neighbours (first/last word to the line
+    edges) and to the full line height. This can only add whitespace to a
+    redaction, never leave ink of the word uncovered.
+    """
+    ordered = sorted(tokens, key=lambda token: token.box[0])
+    fitted: list[OcrToken] = []
+    for index, token in enumerate(ordered):
+        if index == 0:
+            left = line_box[0]
+        else:
+            left = (ordered[index - 1].box[2] + token.box[0]) // 2
+        if index == len(ordered) - 1:
+            right = line_box[2]
+        else:
+            right = (token.box[2] + ordered[index + 1].box[0] + 1) // 2
+        fitted.append(replace(
+            token,
+            box=(
+                min(left, token.box[0]),
+                min(line_box[1], token.box[1]),
+                max(right, token.box[2]),
+                max(line_box[3], token.box[3]),
+            ),
+        ))
+    by_start = {token.start: token for token in fitted}
+    return [by_start[token.start] for token in tokens]
+
+
 def _run_rapidocr(image, settings: OcrSettings, device: str) -> OcrResult:
     import numpy as np
 
     started = time.perf_counter()
     engine = _get_rapidocr_engine(device, settings)
     with _rapidocr_lock:
-        result = engine(image, return_word_box=False)
+        result = engine(image, return_word_box=True)
     duration_ms = (time.perf_counter() - started) * 1000
 
     boxes = getattr(result, "boxes", None)
     texts = getattr(result, "txts", None) or ()
     scores = getattr(result, "scores", None) or ()
+    word_results = getattr(result, "word_results", None) or ()
 
-    raw_lines: list[tuple[tuple[int, int, int, int], str, float]] = []
-    for box, text, score in zip(boxes if boxes is not None else [], texts, scores):
-        points = np.asarray(box)
-        x0, y0 = points[:, 0].min(), points[:, 1].min()
-        x1, y1 = points[:, 0].max(), points[:, 1].max()
+    def box_from_points(points) -> tuple[int, int, int, int]:
+        array = np.asarray(points)
+        return (
+            int(array[:, 0].min()),
+            int(array[:, 1].min()),
+            int(array[:, 0].max()),
+            int(array[:, 1].max()),
+        )
+
+    raw_lines: list[tuple[tuple[int, int, int, int], str, float, object]] = []
+    for index, (box, text, score) in enumerate(zip(boxes if boxes is not None else [], texts, scores)):
         normalized = text.strip()
-        if normalized:
-            raw_lines.append(((int(x0), int(y0), int(x1), int(y1)), normalized, float(score)))
+        if not normalized:
+            continue
+        word_line = word_results[index] if index < len(word_results) else ()
+        raw_lines.append((box_from_points(box), normalized, float(score), word_line))
 
     raw_lines.sort(key=lambda item: (item[0][1], item[0][0]))
 
     lines: list[OcrLine] = []
     cursor = 0
-    for line_id, (box, text, score) in enumerate(raw_lines):
+    for line_id, (box, text, score, word_line) in enumerate(raw_lines):
         line_start = cursor
-        token = OcrToken(
-            text=text,
-            start=line_start,
-            end=line_start + len(text),
-            box=box,
-            confidence=score,
-            line_id=line_id,
-        )
+        tokens: list[OcrToken] = []
+        search_from = 0
+        for word_text, word_score, word_box in word_line or ():
+            normalized_word = (word_text or "").strip()
+            if not normalized_word or not word_box:
+                continue
+            relative_start = text.find(normalized_word, search_from)
+            if relative_start < 0:
+                continue
+            token_start = line_start + relative_start
+            try:
+                confidence = float(word_score)
+            except (TypeError, ValueError):
+                confidence = score
+            tokens.append(OcrToken(
+                text=normalized_word,
+                start=token_start,
+                end=token_start + len(normalized_word),
+                box=box_from_points(word_box),
+                confidence=confidence,
+                line_id=line_id,
+            ))
+            search_from = relative_start + len(normalized_word)
+
+        if tokens:
+            tokens = _fit_word_boxes(tokens, box)
+        else:
+            tokens.append(OcrToken(
+                text=text,
+                start=line_start,
+                end=line_start + len(text),
+                box=box,
+                confidence=score,
+                line_id=line_id,
+            ))
+
         lines.append(OcrLine(
             line_id=line_id,
             text=text,
@@ -343,7 +429,7 @@ def _run_rapidocr(image, settings: OcrSettings, device: str) -> OcrResult:
             end=line_start + len(text),
             box=box,
             confidence=score,
-            tokens=[token],
+            tokens=tokens,
         ))
         cursor = line_start + len(text) + 1
 
@@ -385,5 +471,18 @@ def run_ocr(image, settings: OcrSettings) -> OcrResult:
                 raise OcrError(f"Tesseract fehlgeschlagen: {fallback_exc}") from fallback_exc
             fallback.warnings.extend(warnings)
             fallback.warnings.append(f"RapidOCR-GPU fehlgeschlagen ({exc}); Tesseract eingesetzt.")
+            return fallback
+        if device == "cuda":
+            logger.warning("RapidOCR GPU failed (%s); falling back to RapidOCR CPU", exc)
+            try:
+                fallback = _run_with_timeout(
+                    lambda: _run_rapidocr(image, settings, "cpu"), settings.timeout_seconds
+                )
+            except OcrError:
+                raise
+            except Exception as fallback_exc:
+                raise OcrError(f"RapidOCR fehlgeschlagen: {fallback_exc}") from fallback_exc
+            fallback.warnings.extend(warnings)
+            fallback.warnings.append(f"RapidOCR-GPU fehlgeschlagen ({exc}); RapidOCR läuft auf CPU.")
             return fallback
         raise OcrError(f"RapidOCR fehlgeschlagen: {exc}") from exc

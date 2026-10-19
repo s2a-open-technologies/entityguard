@@ -121,7 +121,7 @@
         </aside>
         {% endif %}
         <main class="content {% if not user %}no-sidebar{% endif %} {% block content_class %}{% endblock %}">
-            {% if error %}
+            {% if error and user %}
             <div class="alert alert-error">{{ error }}</div>
             {% endif %}
             {% if success %}
