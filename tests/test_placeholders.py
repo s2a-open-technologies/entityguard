@@ -96,6 +96,27 @@ def test_overlaps_are_skipped_and_unknown_types_fall_back_to_sensitiv():
     assert out == "[SENSITIV_1]"
 
 
+def test_overlapping_matches_are_merged_so_no_part_leaks():
+    # "Herr Paul" (title pattern) starts first, the NER span "Paul von
+    # Weizsäcker" overlaps it. Skipping the later span leaked the surname.
+    text = "Herr Paul von Weizsäcker aus Berlin"
+    matches = [M(0, 9, "PERSON"), M(5, 24, "PERSON"), M(29, 35, "LOCATION")]
+    out, mapping = placeholders.apply_matches(text, matches, PLACEHOLDERS)
+    assert out == "[NAME_1] aus [ORT_1]"
+    assert mapping == {"[NAME_1]": "Herr Paul von Weizsäcker", "[ORT_1]": "Berlin"}
+
+
+def test_merged_span_takes_the_type_of_the_longest_then_best_scored_match():
+    S = namedtuple("S", "start end entity_type score")
+    text = "Mistral aus Europa"
+    same_span = [S(0, 7, "LOCATION", 0.85), S(0, 7, "PERSON", 0.9)]
+    out, _ = placeholders.apply_matches(text, same_span, PLACEHOLDERS)
+    assert out == "[NAME_1] aus Europa"
+    longest = [S(0, 3, "LOCATION", 1.0), S(0, 7, "PERSON", 0.5)]
+    out, _ = placeholders.apply_matches(text, longest, PLACEHOLDERS)
+    assert out == "[NAME_1] aus Europa"
+
+
 def test_no_matches_returns_the_text_untouched():
     assert placeholders.apply_matches("Hallo Welt", [], PLACEHOLDERS) == ("Hallo Welt", {})
 

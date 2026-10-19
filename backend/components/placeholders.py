@@ -53,6 +53,27 @@ def index_placeholder(base_placeholder: str, index: int) -> str:
     return f"{base_placeholder}_{index}"
 
 
+def _merge_overlaps(matches: Iterable[Match]) -> list[tuple[int, int, str]]:
+    """Merge overlapping matches into (start, end, entity_type) spans.
+
+    Skipping a match that overlaps an earlier one leaked text: the title
+    pattern "Herr Paul" won over the NER span "Paul von Weizsäcker" and left
+    the surname visible. The merged span covers both; its type comes from the
+    longest match, ties broken by the higher score.
+    """
+    def rank(match: Match) -> tuple[int, float]:
+        return (match.end - match.start, getattr(match, "score", 0.0) or 0.0)
+
+    merged: list[tuple[int, int, Match]] = []
+    for match in sorted(matches, key=lambda r: (r.start, r.start - r.end)):
+        if merged and match.start < merged[-1][1]:
+            start, end, best = merged[-1]
+            merged[-1] = (start, max(end, match.end), max(best, match, key=rank))
+        else:
+            merged.append((match.start, match.end, match))
+    return [(start, end, best.entity_type) for start, end, best in merged]
+
+
 def apply_matches(
     text: str,
     matches: Iterable[Match],
@@ -62,8 +83,9 @@ def apply_matches(
     """
     Replace each match with an indexed placeholder and build the mapping.
 
-    Matches are applied left-to-right; a match that overlaps one already
-    placed is skipped. The text between matches is copied unchanged
+    Overlapping matches are merged into one span covering all of them, typed
+    by the longest (then best-scored) match, so no detected part is left
+    visible. The text between matches is copied unchanged
     (whitespace, line breaks and markers survive byte for byte).
 
     Args:
@@ -92,12 +114,9 @@ def apply_matches(
     output_parts: list[str] = []
     last_end = 0
 
-    for match in sorted(matches, key=lambda r: (r.start, r.start - r.end)):
-        if match.start < last_end:
-            continue
-
-        original = text[match.start:match.end]
-        base_placeholder = entity_placeholders.get(match.entity_type, "[SENSITIV]")
+    for start, end, entity_type in _merge_overlaps(matches):
+        original = text[start:end]
+        base_placeholder = entity_placeholders.get(entity_type, "[SENSITIV]")
         key = (base_placeholder, original)
         if reuse_placeholders and key in seen:
             placeholder = seen[key]
@@ -107,9 +126,9 @@ def apply_matches(
             mapping[placeholder] = original
             seen[key] = placeholder
 
-        output_parts.append(text[last_end:match.start])
+        output_parts.append(text[last_end:start])
         output_parts.append(placeholder)
-        last_end = match.end
+        last_end = end
 
     output_parts.append(text[last_end:])
     return "".join(output_parts), mapping
