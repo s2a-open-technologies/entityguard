@@ -14,6 +14,10 @@ Erkennung geschickt und anschließend im Bild geschwärzt. Standard ist die
 komplette OCR-Zeile eines Treffers; die Bildverarbeitung lässt sich im Admin
 unter **Bild-OCR** oder per `ENTITYGUARD_OCR_*` konfigurieren.
 
+> **Beta:** Die Bilderkennung befindet sich in der Beta-Phase. OCR-Ergebnisse
+> und Schwärzungen bitte vor der Weiterverwendung prüfen; bei Unsicherheit den
+> Text-Modus verwenden.
+
 **Stack:** FastAPI · Microsoft Presidio · spaCy (`de_core_news_lg`) · Tesseract/RapidOCR · SQLite · Alembic · Docker
 
 ---
@@ -199,6 +203,9 @@ Liest Text aus einem Bild per OCR, maskiert erkannte Entitäten und liefert ein
 redigiertes PNG zurück. Das Bild wird nur im Speicher verarbeitet und **nie**
 gespeichert. Bei einem Fehler wird das Originalbild nicht zurückgegeben.
 
+> **Beta:** Die Bilderkennung ist noch nicht ausgereift. Ergebnisse vor der
+> Weiterverwendung prüfen; bei Unsicherheit den Text-Modus verwenden.
+
 **Request:**
 ```json
 {
@@ -295,7 +302,7 @@ Das Admin-Interface verwaltet Entitäten, ihre Muster und optional zuschaltbare 
 - **Muster hinzufügen** — als Stichwörter (einfach) oder Regex (fortgeschritten), mit Score (0.0–1.0)
 - **Kontextwörter** — Wörter, die den Erkennungs-Score boosten, wenn sie im Text in der Nähe stehen
 - **Muster-Tester** — Regex testen, bevor sie aktiv werden
-- **Bild-OCR** — Tesseract/RapidOCR, Gerät, Schwärzungsmodus und Limits einstellen; Umgebungsvariablen überschreiben die Werte
+- **Bild-OCR (Beta)** — Tesseract/RapidOCR, Gerät, Schwärzungsmodus und Limits einstellen; Umgebungsvariablen überschreiben die Werte
 - **Modelle** — optionale Transformer-Modelle per Schalter zuschalten
 - **Ausnahmeliste** — Werte, die grundsätzlich **nie** maskiert werden (z. B. ein Firmenname, der fälschlich als Person/Organisation erkannt wird)
 - **API-Schlüssel** — Zugangsschlüssel für die JSON-API (pro App, mehrere möglich), an-/ausschaltbar, einmalige Klartext-Anzeige
@@ -339,9 +346,10 @@ Testseite (nur für eingeloggte Nutzer) mit zwei Modi:
 - **Text:** links Text eingeben oder Datei laden, rechts erscheint live die
   anonymisierte Version (inkl. Hervorhebung der Platzhalter, Hover zeigt den
   Originalwert).
-- **Bild:** links das Original mit roten Markierungen der geschwärzten
+- **Bild (Beta):** links das Original mit roten Markierungen der geschwärzten
   Bereiche, rechts das redigierte PNG, darunter der maskierte OCR-Text,
-  Engine/Gerät/Konfidenz und die Anzahl der Masken.
+  Engine/Gerät/Konfidenz und die Anzahl der Masken. Ergebnisse vor der
+  Weiterverwendung prüfen.
 
 Die Seite nutzt die Admin-Session statt eines API-Schlüssels — im Browser
 liegt also kein Schlüssel.

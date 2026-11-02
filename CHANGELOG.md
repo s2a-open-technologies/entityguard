@@ -12,6 +12,24 @@ section as the GitHub Release notes.
 
 ## [Unreleased]
 
+### Added
+
+- Konzeptdokument für die Audio-Maskierung ([`docs/audio-konzept.md`](docs/audio-konzept.md)):
+  Platzhalter ins Audio einsprechen, Transkription beim Cloud-STT, zweite Maskierungsrunde
+  im Text. Noch nicht implementiert.
+
+### Changed
+
+- Die Bilderkennung ist in der Admin-UI (Anonymisieren und Bild-OCR) und in der README
+  deutlich als **Beta** gekennzeichnet, inklusive Hinweis, die Ergebnisse vor der
+  Weiterverwendung zu prüfen.
+
+### Fixed
+
+- Admin-UI bleibt mit Starlette 1.x lauffähig: Alle `TemplateResponse`-Aufrufe nutzen die
+  neue Signatur `(request, name, context)`. Die alte Form `(name, context)` wurde entfernt
+  und führte beim Rendern zu `TypeError: unhashable type: 'dict'`.
+
 ## [1.2.1] — 2026-10-19
 
 ### Changed
