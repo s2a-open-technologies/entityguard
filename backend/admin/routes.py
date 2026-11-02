@@ -202,6 +202,7 @@ PATTERN_TEMPLATES = [
 async def login_page(request: Request):
     """Render the login page."""
     return templates.TemplateResponse(
+        request,
         "login.html",
         get_template_context(request)
     )
@@ -229,7 +230,7 @@ async def login_submit(
         finally:
             db.close()
         context = get_template_context(request, error="Ungültiger Benutzername oder ungültiges Passwort")
-        return templates.TemplateResponse("login.html", context, status_code=401)
+        return templates.TemplateResponse(request, "login.html", context, status_code=401)
 
     db = SessionLocal()
     try:
@@ -288,7 +289,7 @@ async def dashboard(request: Request, user: dict = Depends(require_auth)):
             active_count=active_count,
             total_patterns=total_patterns
         )
-        return templates.TemplateResponse("dashboard.html", context)
+        return templates.TemplateResponse(request, "dashboard.html", context)
     finally:
         db.close()
 
@@ -301,6 +302,7 @@ async def dashboard(request: Request, user: dict = Depends(require_auth)):
 async def howto_page(request: Request, user: dict = Depends(require_auth)):
     """Render the HowTo / guide page."""
     return templates.TemplateResponse(
+        request,
         "howto.html",
         get_template_context(request)
     )
@@ -372,6 +374,7 @@ async def reload_analyzer(request: Request, user: dict = Depends(require_admin))
 async def change_password_page(request: Request, user: dict = Depends(require_auth)):
     """Render the change password form."""
     return templates.TemplateResponse(
+        request,
         "profile/password.html",
         get_template_context(request)
     )
@@ -395,16 +398,16 @@ async def change_password_submit(
 
         if not verify_password(current_password, db_user.password_hash):
             context = get_template_context(request, error="Das aktuelle Passwort ist falsch")
-            return templates.TemplateResponse("profile/password.html", context, status_code=400)
+            return templates.TemplateResponse(request, "profile/password.html", context, status_code=400)
 
         # Validate new password
         if len(new_password) < 8:
             context = get_template_context(request, error="Das Passwort muss mindestens 8 Zeichen lang sein")
-            return templates.TemplateResponse("profile/password.html", context, status_code=400)
+            return templates.TemplateResponse(request, "profile/password.html", context, status_code=400)
 
         if new_password != confirm_password:
             context = get_template_context(request, error="Die Passwörter stimmen nicht überein")
-            return templates.TemplateResponse("profile/password.html", context, status_code=400)
+            return templates.TemplateResponse(request, "profile/password.html", context, status_code=400)
 
         # Update password
         update_admin_password(db, user["id"], new_password)
@@ -416,7 +419,7 @@ async def change_password_submit(
         )
 
         context = get_template_context(request, success="Passwort erfolgreich geändert")
-        return templates.TemplateResponse("profile/password.html", context)
+        return templates.TemplateResponse(request, "profile/password.html", context)
     finally:
         db.close()
 
@@ -432,7 +435,7 @@ async def list_allowed_values(request: Request, user: dict = Depends(require_aut
     try:
         allowed_values = get_allowed_values(db)
         context = get_template_context(request, allowed_values=allowed_values)
-        return templates.TemplateResponse("allowlist/list.html", context)
+        return templates.TemplateResponse(request, "allowlist/list.html", context)
     finally:
         db.close()
 
@@ -455,7 +458,7 @@ async def create_allowed_value_submit(
                 allowed_values=allowed_values,
                 error=f"'{value}' ist bereits in der Ausnahmeliste"
             )
-            return templates.TemplateResponse("allowlist/list.html", context, status_code=400)
+            return templates.TemplateResponse(request, "allowlist/list.html", context, status_code=400)
 
         create_allowed_value(db, value=value, description=description if description else None)
         log_audit(
@@ -507,7 +510,7 @@ async def list_api_keys(request: Request, user: dict = Depends(require_auth)):
             env_key_count=len(API_KEYS_FROM_ENV),
             new_api_key=request.query_params.get("new_key"),
         )
-        return templates.TemplateResponse("apikeys/list.html", context)
+        return templates.TemplateResponse(request, "apikeys/list.html", context)
     finally:
         db.close()
 
@@ -529,7 +532,7 @@ async def create_api_key_submit(
                 env_key_count=len(API_KEYS_FROM_ENV),
                 error="Eine Bezeichnung ist erforderlich",
             )
-            return templates.TemplateResponse("apikeys/list.html", context, status_code=400)
+            return templates.TemplateResponse(request, "apikeys/list.html", context, status_code=400)
         finally:
             db.close()
 
@@ -608,7 +611,7 @@ async def sanitize_page(request: Request, user: dict = Depends(require_auth)):
     session is used instead of an API key - nothing key-like is exposed to
     the browser.
     """
-    return templates.TemplateResponse("sanitize.html", get_template_context(request))
+    return templates.TemplateResponse(request, "sanitize.html", get_template_context(request))
 
 
 @admin_router.post("/sanitize/api")
@@ -721,7 +724,7 @@ async def ocr_settings_page(request: Request, user: dict = Depends(require_auth)
             settings=settings,
             engines=available_engines(settings),
         )
-        return templates.TemplateResponse("ocr/settings.html", context)
+        return templates.TemplateResponse(request, "ocr/settings.html", context)
     finally:
         db.close()
 
@@ -757,7 +760,7 @@ async def update_ocr_settings(request: Request, user: dict = Depends(require_adm
                 engines=available_engines(settings),
                 error=str(exc),
             )
-            return templates.TemplateResponse("ocr/settings.html", context, status_code=400)
+            return templates.TemplateResponse(request, "ocr/settings.html", context, status_code=400)
 
         clear_ocr_cache()
         log_audit(
@@ -790,7 +793,7 @@ async def list_entities(request: Request, user: dict = Depends(require_auth)):
             pattern_counts=pattern_counts,
             entity_sources=entity_sources,
         )
-        return templates.TemplateResponse("entities/list.html", context)
+        return templates.TemplateResponse(request, "entities/list.html", context)
     finally:
         db.close()
 
@@ -799,6 +802,7 @@ async def list_entities(request: Request, user: dict = Depends(require_auth)):
 async def create_entity_page(request: Request, user: dict = Depends(require_auth)):
     """Render the create entity form."""
     return templates.TemplateResponse(
+        request,
         "entities/create.html",
         get_template_context(request)
     )
@@ -826,7 +830,7 @@ async def create_entity_submit(
                 placeholder=placeholder,
                 description=description
             )
-            return templates.TemplateResponse("entities/create.html", context, status_code=400)
+            return templates.TemplateResponse(request, "entities/create.html", context, status_code=400)
 
         entity = create_entity(
             db,
@@ -860,7 +864,7 @@ async def edit_entity_page(
             raise HTTPException(status_code=404, detail="Entität nicht gefunden")
 
         context = get_template_context(request, entity=entity)
-        return templates.TemplateResponse("entities/edit.html", context)
+        return templates.TemplateResponse(request, "entities/edit.html", context)
     finally:
         db.close()
 
@@ -890,7 +894,7 @@ async def edit_entity_submit(
                 entity=entity,
                 error=f"Eine Entität mit dem Namen '{name}' existiert bereits"
             )
-            return templates.TemplateResponse("entities/edit.html", context, status_code=400)
+            return templates.TemplateResponse(request, "entities/edit.html", context, status_code=400)
 
         old_label = entity.name
         update_entity(
@@ -959,7 +963,7 @@ async def view_entity(
             pattern_templates=PATTERN_TEMPLATES,
             sources=_entity_sources(entity, _active_model_entity_sources(db)),
         )
-        return templates.TemplateResponse("entities/view.html", context)
+        return templates.TemplateResponse(request, "entities/view.html", context)
     finally:
         db.close()
 
@@ -999,7 +1003,7 @@ async def create_pattern_submit(
                 context_words=get_context_words_by_entity(db, entity_id),
                 error=error,
             )
-            return templates.TemplateResponse("entities/view.html", context, status_code=400)
+            return templates.TemplateResponse(request, "entities/view.html", context, status_code=400)
 
         create_pattern(db, name=name, regex=regex, score=score, entity_id=entity_id, keywords=stored_keywords)
         log_audit(
@@ -1037,7 +1041,7 @@ async def edit_pattern_submit(
         error = _validate_pattern(db, name, regex, ignore_id=pattern_id)
         if error:
             context = get_template_context(request, error=error, pattern=pattern)
-            return templates.TemplateResponse("patterns/edit.html", context, status_code=400)
+            return templates.TemplateResponse(request, "patterns/edit.html", context, status_code=400)
 
         update_pattern(db, pattern_id, name=name, regex=regex, score=score, keywords=stored_keywords)
         log_audit(
@@ -1064,7 +1068,7 @@ async def edit_pattern_page(
         if not pattern:
             raise HTTPException(status_code=404, detail="Muster nicht gefunden")
         context = get_template_context(request, pattern=pattern)
-        return templates.TemplateResponse("patterns/edit.html", context)
+        return templates.TemplateResponse(request, "patterns/edit.html", context)
     finally:
         db.close()
 
@@ -1213,7 +1217,7 @@ async def list_models(request: Request, user: dict = Depends(require_auth)):
         context = get_template_context(
             request, models=models, gpu_available=gpu_available(), env_models=MODELS_FROM_ENV,
         )
-        return templates.TemplateResponse("models/list.html", context)
+        return templates.TemplateResponse(request, "models/list.html", context)
     finally:
         db.close()
 
@@ -1277,7 +1281,7 @@ async def list_users_page(request: Request, user: dict = Depends(require_admin))
             current_user_id=user["id"],
             valid_roles=VALID_ROLES,
         )
-        return templates.TemplateResponse("users/list.html", context)
+        return templates.TemplateResponse(request, "users/list.html", context)
     finally:
         db.close()
 
@@ -1297,6 +1301,7 @@ async def create_user_submit(
     try:
         def _error(message: str):
             return templates.TemplateResponse(
+                request,
                 "users/list.html",
                 get_template_context(
                     request, users=get_admin_users(db), current_user_id=user["id"],
@@ -1526,7 +1531,7 @@ async def audit_page(request: Request, user: dict = Depends(require_admin)):
             audit_target_types=AUDIT_TARGET_TYPES,
             base_query=_audit_filter_query_string(filters),
         )
-        return templates.TemplateResponse("audit/list.html", context)
+        return templates.TemplateResponse(request, "audit/list.html", context)
     finally:
         db.close()
 
@@ -1628,6 +1633,6 @@ async def traces_page(request: Request, user: dict = Depends(require_admin)):
             trace_enabled=TRACE_ENABLED,
             retention_days=TRACE_RETENTION_DAYS,
         )
-        return templates.TemplateResponse("traces/list.html", context)
+        return templates.TemplateResponse(request, "traces/list.html", context)
     finally:
         db.close()
