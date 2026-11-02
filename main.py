@@ -18,7 +18,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 import logging
 from contextlib import asynccontextmanager
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, UTC
 from pathlib import Path
 
 import uvicorn
@@ -48,7 +48,7 @@ def _cleanup_request_traces() -> None:
         return
     db = SessionLocal()
     try:
-        cutoff = datetime.utcnow() - timedelta(days=TRACE_RETENTION_DAYS)
+        cutoff = datetime.now(tz=UTC) - timedelta(days=TRACE_RETENTION_DAYS)
         removed = delete_old_request_traces(db, cutoff)
         if removed:
             logger.info(f"Pruned {removed} request trace(s) older than {TRACE_RETENTION_DAYS} days")
