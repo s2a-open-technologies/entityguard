@@ -119,6 +119,7 @@ Service listens on `http://localhost:9500` (`main.py` hardcodes the port).
 - `docs/data-mapping.md` — data flow / ROPA starting point.
 - `docs/pii.md` — masking pipeline and response contract.
 - `docs/audit-checklist-entityguard.md` — audit self-assessment.
+- `docs/audio-konzept.md` — concept (not implemented): masked audio to cloud STT plus a second text masking pass.
 - `SECURITY.md` — security architecture, Art. 32 measures, deployment.
 - `DISCLAIMER.md` — liability / not-a-medical-device notice.
 - `CLAUDE.md` — thin wrapper importing this file; keep `AGENTS.md` canonical.
